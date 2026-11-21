@@ -3,7 +3,7 @@
 const KEY = 'ulak-tartysh-settings-v1';
 
 const DEFAULTS = {
-  v: 2,
+  v: 3,
   lang: 'ru',
   nickname: '',
   // управление
@@ -21,7 +21,7 @@ const DEFAULTS = {
   camera: 'chase', // chase | tv | top | first
   names: 'all', // all | humans | none
   // быстрый матч
-  quick: { time: 180, difficulty: 'easy', size: 2, weather: 'random', map: 'random' },
+  quick: { time: 180, difficulty: 'easy', size: 4, weather: 'random', map: 'random' },
   // локальная статистика (до появления онлайна и аккаунтов)
   stats: { matches: 0, wins: 0, draws: 0, goals: 0 },
   // прогресс: опыт, монеты, купленные масти
@@ -47,6 +47,11 @@ function load() {
     if (!raw.v || raw.v < 2) {
       raw.autoSwitch = false;
       raw.v = 2;
+    }
+    // v3: регламент по правилам федерации — три периода, 4 на 4
+    if (raw.v < 3) {
+      raw.quick = { ...(raw.quick || {}), time: 180, size: 4 };
+      raw.v = 3;
     }
     return {
       ...DEFAULTS,

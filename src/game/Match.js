@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS, GRAVITY } from '../config.js';
+import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS, GRAVITY, RULES } from '../config.js';
 
 // Ближайшие точки двух отрезков на плоскости (x, z)
 function closestSegSeg(p1x, p1z, q1x, q1z, p2x, p2z, q2x, q2z) {
@@ -37,23 +37,35 @@ export class Match {
     this.riders = riders;
     this.ulak = ulak;
     this.brains = brains; // BotBrain[] для ботов
-    this.events = events; // колбэки: onGoal, onSteal, onPickup, onThrow, onCountdown, onStart, onEnd
-    this.state = 'idle'; // idle | countdown | playing | goal | over
+    this.events = events; // колбэки: onGoal, onSteal, onPickup, onThrow, onCountdown, onStart, onEnd, ...
+    this.state = 'idle'; // idle | countdown | playing | goal | whistle | break | over
     this.score = [0, 0];
     this.duration = MATCH_TIME;
-    this.time = MATCH_TIME;
+    this.periods = RULES.periods;
+    this.period = 1;
+    this.periodTime = MATCH_TIME / RULES.periods;
+    this.time = this.periodTime; // осталось в текущем периоде
     this.timer = 0;
     this._order = 0;
     this.tug = null; // { holder, rival, t, score, bias } — текущая борьба за улак
-    this.goldenGoal = true; // при ничьей — минута до первого гола
+    this.duel = null; // { x, z, r, t, riders } — схватка один на один в круге
+    this.looseT = 0; // сколько улак лежит без хозяина
+    this.goldenGoal = true; // при ничьей — дополнительное время до первого гола
     this.overtime = false;
     this.overtimeLeft = 0;
+    this._pending = null;
   }
 
-  // Состав и длительность следующего матча
-  configure(riders, duration = MATCH_TIME) {
+  // Состав и длительность следующего матча (duration — сумма всех периодов)
+  configure(riders, duration = MATCH_TIME, periods = RULES.periods) {
     this.riders = riders;
     this.duration = duration;
+    this.periods = periods;
+    this.periodTime = duration / periods;
+  }
+
+  get penaltyTime() {
+    return THREE.MathUtils.clamp(this.periodTime * RULES.penaltyShare, 8, 120);
   }
 
   _finish() {
@@ -66,27 +78,120 @@ export class Match {
     this.score = [0, 0];
     this.overtime = false;
     this.overtimeLeft = 0;
-    this.time = this.duration;
+    this.period = 1;
+    this.time = this.periodTime;
+    // исходные стороны: команда 0 атакует вправо
+    TEAMS[0].attackDir = 1;
+    TEAMS[1].attackDir = -1;
+    this.events.onSides?.();
+    for (const r of this.riders) {
+      r.penalty = 0;
+      r.fouls = 0;
+    }
     this.kickoff();
   }
 
+  // Розыгрыш: улак в центральном круге, команды стартуют с боковой линии напротив зрителей
   kickoff() {
     const perTeam = [0, 0];
-    const size = this.riders.length / 2;
+    const zLine = FIELD.width / 2 - 3;
     for (const r of this.riders) {
+      if (r.penalty > 0) continue;
       const i = perTeam[r.teamId]++;
-      const dir = r.team.attackDir;
-      // шеренга в шахматном порядке на своей половине
-      const z = (i - (size - 1) / 2) * 8;
-      r.place(-dir * (13 + (i % 2) * 6), z, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      r.place(-r.team.attackDir * (5 + i * 5.5), zLine, Math.PI);
       r.frozen = true;
       r.mustRelease = false;
     }
     this._endTug();
-    this.ulak.reset(0, 0, 5);
+    this.duel = null;
+    this.looseT = 0;
+    this.ulak.reset(0, 0, 3);
     this.state = 'countdown';
     this.timer = 3;
     this._lastCount = 0;
+  }
+
+  _swapSides() {
+    for (const t of TEAMS) t.attackDir *= -1;
+    this.events.onSides?.();
+  }
+
+  _endPeriod() {
+    for (const r of this.riders) r.frozen = true;
+    if (this.period < this.periods) {
+      this.state = 'break';
+      this.timer = 3.5;
+      this._pending = 'period';
+      this.events.onPeriodEnd?.(this.period);
+    } else if (this.goldenGoal && this.score[0] === this.score[1]) {
+      this.state = 'break';
+      this.timer = 3.5;
+      this._pending = 'overtime';
+      this.events.onPeriodEnd?.(this.period);
+    } else this._finish();
+  }
+
+  // Свисток: аут или улак слишком долго не взят — назначается «жекеме-жеке»
+  _whistle(reason) {
+    const u = this.ulak;
+    this._endTug();
+    if (u.holder) u.release(u.pos.clone().setY(1.2), new THREE.Vector3(), u.holder);
+    for (const r of this.riders) {
+      r.frozen = true;
+      r.charging = false;
+      r.charge = 0;
+    }
+    this.state = 'whistle';
+    this.timer = 1.6;
+    this._pending = { x: u.pos.x, z: u.pos.z };
+    this.events.onWhistle?.(reason);
+  }
+
+  // Схватка один на один в ближайшем круге: остальные ждут за кругом
+  _startDuel(x) {
+    const cx = RULES.duelCircles.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a));
+    const R = RULES.duelRadius;
+    const duelists = [];
+    for (const team of TEAMS) {
+      const mine = this.riders.filter((r) => r.teamId === team.id && !(r.penalty > 0));
+      if (!mine.length) continue;
+      const d = mine.find((r) => r.isHuman) ?? mine.reduce((a, b) => (Math.abs(a.pos.x - cx) < Math.abs(b.pos.x - cx) ? a : b));
+      duelists.push(d);
+      const dir = team.attackDir;
+      let k = 0;
+      for (const r of mine) {
+        const h = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        if (r === d) r.place(cx - dir * 6, 0, h);
+        else {
+          r.place(cx - dir * (R + 8 + k * 3), (k % 2 ? 1 : -1) * (7 + k * 3), h);
+          k++;
+        }
+        r.frozen = true;
+        r.mustRelease = false;
+      }
+    }
+    this.ulak.reset(cx, 0, 0.6);
+    this.duel = { x: cx, z: 0, r: R, t: 0, riders: duelists };
+    this.looseT = 0;
+    this.state = 'countdown';
+    this.timer = 2;
+    this._lastCount = 0;
+    this.events.onDuel?.(duelists);
+  }
+
+  // Нарушение: всадник удаляется на штрафное время, команда играет в меньшинстве
+  foul(r, kind) {
+    if (r.penalty > 0) return;
+    if (this.tug && (this.tug.holder === r || this.tug.rival === r)) this._endTug();
+    if (r.hasUlak) this.ulak.release(new THREE.Vector3(r.pos.x, 1.2, r.pos.z), new THREE.Vector3(), r);
+    r.fouls = (r.fouls || 0) + 1;
+    // повторное нарушение наказывается строже (по правилам — 3 минуты вместо 2)
+    const dur = this.penaltyTime * (r.fouls > 1 ? 1.5 : 1);
+    const spot = this.riders.filter((o) => o.penalty > 0).length;
+    r.place(-r.team.attackDir * (8 + spot * 4), FIELD.width / 2 + FIELD.margin - 1.6, Math.PI);
+    r.penalty = dur;
+    r.frozen = true;
+    this.events.onFoul?.(r, kind, dur);
   }
 
   update(dt) {
@@ -100,12 +205,31 @@ export class Match {
         }
         if (this.timer <= 0) {
           this.state = 'playing';
-          for (const r of this.riders) r.frozen = false;
+          for (const r of this.riders) if (!(r.penalty > 0)) r.frozen = false;
           this.events.onStart?.();
         }
         break;
       }
       case 'playing':
+        // штрафники отбывают время и возвращаются с боковой линии
+        for (const r of this.riders) {
+          if (!(r.penalty > 0)) continue;
+          r.penalty -= dt;
+          if (r.penalty <= 0) {
+            r.penalty = 0;
+            r.place(r.pos.x, FIELD.width / 2 - 3, Math.PI);
+            r.frozen = false;
+            this.events.onPenaltyEnd?.(r);
+          }
+        }
+        if (this.duel) {
+          this.duel.t += dt;
+          const u = this.ulak.pos;
+          if (Math.hypot(u.x - this.duel.x, u.z - this.duel.z) > this.duel.r || this.duel.t > RULES.duelTime) {
+            this.duel = null;
+            this.events.onDuelEnd?.();
+          }
+        }
         if (this.overtime) {
           // дополнительное время: играем до первого гола
           this.overtimeLeft -= dt;
@@ -115,11 +239,7 @@ export class Match {
         this.time -= dt;
         if (this.time <= 0) {
           this.time = 0;
-          if (this.goldenGoal && this.score[0] === this.score[1]) {
-            this.overtime = true;
-            this.overtimeLeft = 60;
-            this.events.onOvertime?.();
-          } else this._finish();
+          this._endPeriod();
         }
         break;
       case 'goal':
@@ -129,6 +249,26 @@ export class Match {
           else this.kickoff();
         }
         break;
+      case 'break':
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          // после каждого периода команды меняются казанами
+          this._swapSides();
+          if (this._pending === 'overtime') {
+            this.overtime = true;
+            this.overtimeLeft = Math.max(30, this.duration * RULES.overtimeShare);
+            this.events.onOvertime?.();
+          } else {
+            this.period++;
+            this.time = this.periodTime;
+          }
+          this.kickoff();
+        }
+        break;
+      case 'whistle':
+        this.timer -= dt;
+        if (this.timer <= 0) this._startDuel(this._pending.x);
+        break;
       default:
         break;
     }
@@ -137,7 +277,7 @@ export class Match {
 
     if (this.state === 'playing') {
       for (const b of this.brains) {
-        if (b.rider.isHuman || !this.riders.includes(b.rider)) continue;
+        if (b.rider.isHuman || b.rider.penalty > 0 || !this.riders.includes(b.rider)) continue;
         b.think(dt, this);
       }
     } else {
@@ -157,14 +297,30 @@ export class Match {
     this.ulak.preStep(dt);
     this.physics.step(dt);
     const scoredAt = this.ulak.postStep();
-    if (scoredAt && this.state === 'playing') {
+    if (this.state !== 'playing') return;
+
+    if (scoredAt) {
       // казан на стороне s атакует команда с attackDir === s
       const team = TEAMS.find((t) => t.attackDir === scoredAt);
       this.score[team.id]++;
       this.state = 'goal';
       this.timer = 3.2;
+      this.duel = null;
       this.events.onGoal?.(team, this.ulak.lastHolder, this.score);
+      return;
     }
+
+    // аут: улак (не всадник) пересёк линию поля
+    const u = this.ulak.pos;
+    if (Math.abs(u.x) > FIELD.length / 2 + 0.3 || Math.abs(u.z) > FIELD.width / 2 + 0.3) {
+      this._whistle('out');
+      return;
+    }
+    // улак слишком долго лежит без хозяина
+    if (!this.ulak.holder && !this.duel && !this.ulak.inKazan && this.ulak.resting) {
+      this.looseT += dt;
+      if (this.looseT > RULES.looseTime) this._whistle('loose');
+    } else if (this.ulak.holder) this.looseT = 0;
   }
 
   _collide(dt) {
@@ -229,9 +385,45 @@ export class Match {
         const jt = THREE.MathUtils.clamp((-vt * m) / 2, -HORSE.friction * jn, HORSE.friction * jn);
         const jx = jn * nx + jt * tx;
         const jz = jn * nz + jt * tz;
+        // таран — запрещённый приём: удар носом на скорости в бок соперника
+        if (this.state === 'playing' && a.teamId !== b.teamId && -vn > RULES.ramSpeed) {
+          const alongA = (rax * afx + raz * afz) / (L * L);
+          const alongB = (rbx * bfx + rbz * bfz) / (L * L);
+          const aInto = a.vel.x * nx + a.vel.z * nz;
+          const bInto = -(b.vel.x * nx + b.vel.z * nz);
+          if (alongA > 0.75 && Math.abs(alongB) < 0.6 && aInto > bInto + 3) this._ramBy = a;
+          else if (alongB > 0.75 && Math.abs(alongA) < 0.6 && bInto > aInto + 3) this._ramBy = b;
+        }
         a.applyImpulse(-jx, -jz, rax, raz);
         b.applyImpulse(jx, jz, rbx, rbz);
         if (-vn > 2.5) this.events.onImpact?.(a, b, -vn, (c.x1 + c.x2) / 2, (c.z1 + c.z2) / 2);
+      }
+    }
+
+    if (this._ramBy) {
+      const r = this._ramBy;
+      this._ramBy = null;
+      this.foul(r, 'ram');
+    }
+
+    // во время «жекеме-жеке» остальные всадники не входят в круг
+    if (this.duel) {
+      const lim = this.duel.r + 2;
+      for (const r of rs) {
+        if (this.duel.riders.includes(r) || r.penalty > 0) continue;
+        const dx = r.pos.x - this.duel.x;
+        const dz = r.pos.z - this.duel.z;
+        const d = Math.hypot(dx, dz);
+        if (d < lim && d > 1e-3) {
+          r.pos.x = this.duel.x + (dx / d) * lim;
+          r.pos.z = this.duel.z + (dz / d) * lim;
+          const vn = (r.vel.x * dx + r.vel.z * dz) / d;
+          if (vn < 0) {
+            r.vel.x -= (vn * dx) / d;
+            r.vel.z -= (vn * dz) / d;
+            r.speed *= 0.9;
+          }
+        }
       }
     }
 
@@ -278,6 +470,7 @@ export class Match {
     this._order = (this._order + 1) % n; // чтобы никто не имел приоритета при одновременном подборе
     for (let k = 0; k < n; k++) {
       const r = this.riders[(k + this._order) % n];
+      if (r.penalty > 0) continue;
       const action = r.controls.action;
       if (r.mustRelease && !action) r.mustRelease = false;
       if (r.controls.feint && !r.prevFeint) this._feint(r);
@@ -332,7 +525,7 @@ export class Match {
     let best = null;
     let bestScore = Infinity;
     for (const m of this.riders) {
-      if (m === r || m.teamId !== r.teamId) continue;
+      if (m === r || m.teamId !== r.teamId || m.penalty > 0) continue;
       const d = Math.hypot(m.pos.x - r.pos.x, m.pos.z - r.pos.z);
       if (d < 4 || d > 42) continue;
       const score = d - (m.pos.x - r.pos.x) * dir * 0.8;

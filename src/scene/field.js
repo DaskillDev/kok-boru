@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FIELD, KAZAN, TEAMS } from '../config.js';
+import { FIELD, KAZAN, TEAMS, RULES } from '../config.js';
 import { makeNoiseMap } from './textures.js';
 import { fbm2 } from './noise.js';
 
@@ -100,8 +100,11 @@ function createPitch(group, assets) {
   addLine(group, lm, -hl, 0, t, FIELD.width);
   addLine(group, lm, hl, 0, t, FIELD.width);
   addLine(group, lm, 0, 0, t, FIELD.width);
-  addRing(group, lm, 0, 0, 9);
-  addRing(group, lm, 0, 0, 0.5, 1.0);
+  // круги для розыгрыша и схваток один на один («жекеме-жеке»)
+  for (const cx of RULES.duelCircles) {
+    addRing(group, lm, cx, 0, RULES.duelRadius);
+    addRing(group, lm, cx, 0, 0.5, 1.0);
+  }
   // зоны казанов
   for (const s of [-1, 1]) {
     addRing(group, lm, s * KAZAN.x, 0, 12, 0.22);
@@ -160,6 +163,7 @@ function createKazan(team) {
   rim.position.y = height + 0.03;
   rim.castShadow = true;
   g.add(rim);
+  g.userData.rimMat = rim.material;
 
   // орнаментальный пояс
   const belt = new THREE.Mesh(
@@ -169,6 +173,7 @@ function createKazan(team) {
   belt.rotation.x = Math.PI / 2;
   belt.position.y = height * 0.55;
   g.add(belt);
+  g.userData.beltMat = belt.material;
 
   // тёмное дно
   const floor = new THREE.Mesh(
@@ -249,19 +254,33 @@ export function createField(scene, assets) {
   createFence(group);
 
   const flags = [];
-  for (const team of TEAMS) {
-    // казан команды стоит на её стороне (противоположной направлению атаки)
-    const x = -KAZAN.x * team.attackDir;
-    const kazan = createKazan(team);
+  const sides = []; // { s, kazan, flags } — по одному на каждый край поля
+  for (const s of [-1, 1]) {
+    const x = s * KAZAN.x;
+    const kazan = createKazan(TEAMS[0]);
     kazan.position.set(x, 0, 0);
     group.add(kazan);
+    const mine = [];
     for (const sz of [-1, 1]) {
-      const f = createFlag(team.color);
-      f.position.set(x - team.attackDir * 5.5, 0, sz * 7);
+      const f = createFlag(0xffffff);
+      f.position.set(x + s * 5.5, 0, sz * 7);
       group.add(f);
       flags.push(f);
+      mine.push(f);
+    }
+    sides.push({ s, kazan, flags: mine });
+  }
+  // Казан на краю s принадлежит команде, которая атакует в противоположную сторону.
+  // После каждого периода команды меняются казанами — перекрашиваем обод и флаги.
+  function setSides() {
+    for (const side of sides) {
+      const team = TEAMS.find((t) => t.attackDir === -side.s);
+      side.kazan.userData.rimMat.color.set(team.color);
+      side.kazan.userData.beltMat.color.set(team.trim);
+      for (const f of side.flags) f.userData.cloth.material.color.set(team.color);
     }
   }
+  setSides();
   scene.add(group);
 
   function update(time) {
@@ -279,5 +298,5 @@ export function createField(scene, assets) {
     }
   }
 
-  return { group, update };
+  return { group, update, setSides };
 }

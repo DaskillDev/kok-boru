@@ -1,4 +1,4 @@
-import { KAZAN, GRAVITY, ULAK, enemyKazanX, ownKazanX } from '../config.js';
+import { KAZAN, GRAVITY, ULAK, FIELD, enemyKazanX, ownKazanX } from '../config.js';
 
 // Простой ИИ всадника. Каждый кадр заполняет rider.controls —
 // тем же способом, что и клавиатура игрока.
@@ -110,6 +110,13 @@ export class BotBrain {
         this._drive(ox + (T.x - ox) * k, T.z * k, { arrive: 3 });
         return;
       }
+    }
+
+    // «жекеме-жеке»: кто не участвует в схватке, ждёт за кругом на своей стороне
+    if (match.duel && !match.duel.riders.includes(me)) {
+      const dir = me.team.attackDir;
+      this._drive(match.duel.x - dir * (match.duel.r + 6), this.side * 9, { arrive: 3 });
+      return;
     }
 
     const holder = ulak.holder;
@@ -228,6 +235,9 @@ export class BotBrain {
   _drive(tx, tz, { sprint = false, arrive = 0 } = {}) {
     const me = this.rider;
     const c = me.controls;
+    // цель не выносим за линии поля — иначе улак уйдёт в аут
+    tx = clamp(tx, -FIELD.length / 2 + 2.5, FIELD.length / 2 - 2.5);
+    tz = clamp(tz, -FIELD.width / 2 + 2.5, FIELD.width / 2 - 2.5);
     const dx = tx - me.pos.x;
     const dz = tz - me.pos.z;
     const d = Math.hypot(dx, dz);

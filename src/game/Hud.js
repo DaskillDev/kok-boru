@@ -26,11 +26,12 @@ export class Hud {
     this.score[1].textContent = s[1];
   }
 
-  setTime(sec) {
+  setTime(sec, label = '') {
     const t = Math.max(0, Math.ceil(sec));
-    if (t === this._last.t) return;
+    if (t === this._last.t && label === this._last.label) return;
     this._last.t = t;
-    this.timer.textContent = `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+    this._last.label = label;
+    this.timer.innerHTML = `<small>${label}</small>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
     this.timer.classList.toggle('low', t <= 20);
   }
 

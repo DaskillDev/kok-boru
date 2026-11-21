@@ -53,15 +53,22 @@ export function createArena(scene) {
   back.position.set(0, 2.2, z0 - ROWS * 1.25 + 0.4);
   back.castShadow = true;
   group.add(back);
-  for (const team of TEAMS) {
+  const cloths = [];
+  for (const side of [-1, 1]) {
     const cloth = new THREE.Mesh(
       new THREE.PlaneGeometry(STAND_LEN / 2 - 1, 1.1),
-      new THREE.MeshStandardMaterial({ color: team.color, roughness: 0.8 }),
+      new THREE.MeshStandardMaterial({ roughness: 0.8 }),
     );
-    // полотнище команды висит на её половине
-    cloth.position.set((-team.attackDir * STAND_LEN) / 4, 0.62, z0 + 0.64);
+    cloth.position.set((side * STAND_LEN) / 4, 0.62, z0 + 0.64);
+    cloth.userData.side = side;
     group.add(cloth);
+    cloths.push(cloth);
   }
+  // полотнище команды висит на её половине; после смены казанов меняется и оно
+  function setSides() {
+    for (const c of cloths) c.material.color.set(TEAMS.find((t) => t.attackDir === -c.userData.side).color);
+  }
+  setSides();
 
   // баннер над трибуной
   const poleMat = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.5, metalness: 0.3 });
@@ -134,6 +141,7 @@ export function createArena(scene) {
 
   return {
     group,
+    setSides,
     setVisible(v) {
       bodies.visible = heads.visible = v;
     },

@@ -60,16 +60,16 @@ export function createEnvironment(scene, assets) {
   scene.fog = new THREE.FogExp2(skyInfo.horizon.clone().multiplyScalar(0.82), 0.00095);
 
   const sun = new THREE.DirectionalLight(0xfff2de, 3.6);
-  sun.position.copy(sunDir).multiplyScalar(170);
+  sun.position.copy(sunDir).multiplyScalar(200);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   const sc = sun.shadow.camera;
-  sc.left = -88;
-  sc.right = 88;
-  sc.top = 88;
-  sc.bottom = -88;
+  sc.left = -130;
+  sc.right = 130;
+  sc.top = 130;
+  sc.bottom = -130;
   sc.near = 20;
-  sc.far = 360;
+  sc.far = 420;
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.05;
   sun.shadow.radius = 3;
@@ -228,8 +228,8 @@ export function createYurts(scene) {
     [-10, -55, 0.1, 0.95],
     [26, -57, -0.4, 1.1],
     [40, -52, 0.2, 1],
-    [-84, 22, 1.4, 1.1],
-    [86, -18, -1.5, 1],
+    [-128, 22, 1.4, 1.1],
+    [130, -18, -1.5, 1],
     [14, 58, 3.0, 1.05],
     [-30, 56, 3.3, 1],
   ];

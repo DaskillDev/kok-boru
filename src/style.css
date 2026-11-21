@@ -256,3 +256,6 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
   place-items: center; font-size: 22px; color: #ffd23a; text-shadow: 0 0 6px #000, 0 2px 4px #000;
 }
 #ulak-arrow.on { display: grid; }
+
+#timer { flex-direction: column; line-height: 1; justify-content: center; }
+#timer small { font-size: 10px; font-weight: 600; opacity: .7; letter-spacing: 1px; margin-bottom: 2px; }

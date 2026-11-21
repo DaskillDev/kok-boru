@@ -238,7 +238,31 @@ async function init() {
         audio.beep(true);
         setTimeout(() => tip('tipStart', 3), 1100);
       },
+      onSides: () => {
+        field.setSides();
+        arena.setSides();
+      },
+      onPeriodEnd: (n) => {
+        if (demo) return;
+        hud.showBanner(`${t('periodEnd')} ${n}<small>${t('swapSides')}</small>`, 3.2);
+        audio.whistle();
+      },
+      onWhistle: (reason) => {
+        if (demo) return;
+        hud.showBanner(`${t(reason === 'out' ? 'out' : 'loose')}<small>${t('duel')} — ${t('duelSub')}</small>`, 2.6);
+        audio.whistle();
+      },
+      onFoul: (r, kind, dur) => {
+        if (demo) return;
+        const who = r === player ? t('youPenalty') : r.name;
+        hud.showBanner(`<small>${t('foul')}: ${t('foulRam')} · ${who} · ${t('penaltyOf')} ${Math.round(dur)} с</small>`, 2.4, '#ffb04a');
+        audio.whistle();
+      },
+      onPenaltyEnd: (r) => {
+        if (!demo && r === player) hud.showBanner(`<small>${t('you')} ${t('back2game')}</small>`, 1.2);
+      },
       onOvertime: () => {
+        if (demo) return;
         hud.showBanner(`${t('overtime')}<small>${t('overtimeSub')}</small>`, 2.2, '#ffd34a');
         audio.whistle();
       },
@@ -569,6 +593,8 @@ function manualSwitch() {
 
 function possessionText() {
   const h = ulak.holder;
+  if (player.penalty > 0) return `${t('youPenalty')}: ${Math.ceil(player.penalty)} с`;
+  if (match.duel) return `${t('duel')} — ${t('duelSub')}`;
   if (!h) return match.state === 'playing' ? t('freeUlak') : '';
   if (h === player) return t('youHave');
   return h.teamId === player.teamId ? `${t('mateHas')} (${h.name})` : `${t('foeHas')} (${h.name})`;
@@ -627,7 +653,10 @@ function frame(now) {
     }
 
     if (match.state !== 'idle' && !demo) {
-      hud.setTime(match.overtime ? match.overtimeLeft : match.time);
+      hud.setTime(
+        match.overtime ? match.overtimeLeft : match.time,
+        match.overtime ? t('otShort') : `${match.period}/${match.periods}`,
+      );
       hud.setStamina(player.stamina, player.exhausted);
       hud.setCharge(player.charging ? player.charge : -1);
       hud.setPossession(possessionText());

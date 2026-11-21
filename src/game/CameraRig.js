@@ -29,6 +29,7 @@ export class CameraRig {
     this.orbitT = 0;
     this._hidden = null;
     this._shake = 0;
+    this._lag = 0;
   }
 
   // Встряска камеры от удара (0..1)
@@ -86,7 +87,7 @@ export class CameraRig {
     if (this.mode === 'tv') return 30;
     if (this.mode === 'top') return 38;
     if (this.mode === 'first') return 74 + (target.sprinting ? 6 : 0);
-    return 58 + (target.sprinting ? 9 : 0) + Math.min(Math.abs(target.speed), 16) * 0.4;
+    return 60 + (target.sprinting ? 4 : 0);
   }
 
   _compute(target, ulak) {
@@ -108,14 +109,19 @@ export class CameraRig {
       _want.set(_head.x + hx * 0.22, _head.y - 0.1, _head.z + hz * 0.22);
       _look.set(_head.x + hx * 12, _head.y - 1.6, _head.z + hz * 12);
     } else {
-      _want.set(target.pos.x - sx * this.dist, this.height, target.pos.z - cz * this.dist);
-      _look.set(target.pos.x + sx * 5, 1.9, target.pos.z + cz * 5);
+      // камера на «стреле» позади всадника; на скорости стрела чуть длиннее
+      const d = this.dist + this._lag;
+      _want.set(target.pos.x - sx * d, this.height + this._lag * 0.25, target.pos.z - cz * d);
+      _look.set(target.pos.x + sx * 3, 1.8, target.pos.z + cz * 3);
     }
   }
 
   follow(dt, target, ulak) {
+    // курс камеры плавно догоняет курс коня: на месте — медленно, на скорости — быстрее
     const d = Math.atan2(Math.sin(target.heading - this.yaw), Math.cos(target.heading - this.yaw));
-    this.yaw += d * (1 - Math.exp(-dt * 5));
+    const sp = Math.abs(target.speed);
+    this.yaw += d * (1 - Math.exp(-dt * (1.6 + Math.min(sp, 15) * 0.13)));
+    this._lag += (Math.min(sp, 22) * 0.11 - this._lag) * (1 - Math.exp(-dt * 1.5));
 
     // ТВ-камера держит в кадре и игрока, и улак
     if (ulak) {
@@ -137,19 +143,26 @@ export class CameraRig {
       this.camera.position.copy(_want);
       this.look.lerp(_look, 1 - Math.exp(-dt * 14));
     } else {
-      const k = this.screenRelative ? 3 : 7;
-      this.camera.position.lerp(_want, 1 - Math.exp(-dt * k));
-      this.look.lerp(_look, 1 - Math.exp(-dt * (this.screenRelative ? 4 : 9)));
+      if (this.screenRelative) {
+        this.camera.position.lerp(_want, 1 - Math.exp(-dt * 3));
+        this.look.lerp(_look, 1 - Math.exp(-dt * 4));
+      } else {
+        // положение считается от сглаженного курса напрямую: без второго слоя сглаживания
+        // камера не «плавает» и не отстаёт от коня; мягко подводим только после смены вида
+        const k = 1 - Math.exp(-dt * 14);
+        this.camera.position.lerp(_want, k);
+        this.look.lerp(_look, k);
+      }
     }
     if (this._shake > 0.01) {
-      const k = this._shake * (this.screenRelative ? 0.5 : 0.22);
+      const k = this._shake * (this.screenRelative ? 0.3 : 0.1);
       this.camera.position.x += (Math.random() - 0.5) * k;
       this.camera.position.y += (Math.random() - 0.5) * k;
       this.camera.position.z += (Math.random() - 0.5) * k;
       this._shake *= Math.exp(-dt * 7);
     }
     this.camera.lookAt(this.look);
-    this.camera.fov += (this._fov(target) - this.camera.fov) * (1 - Math.exp(-dt * 3));
+    this.camera.fov += (this._fov(target) - this.camera.fov) * (1 - Math.exp(-dt * 1.5));
     this.camera.updateProjectionMatrix();
   }
 

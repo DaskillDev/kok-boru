@@ -5,7 +5,7 @@ import { t, setLang, applyI18n } from './i18n.js';
 // Вся разметка строится здесь; оформление — в style.css.
 
 const QUICK_ROWS = [
-  { key: 'quick.time', label: 'time', icon: '◷', options: [[60, 'min1'], [180, 'min3'], [300, 'min5']] },
+  { key: 'quick.time', label: 'time', icon: '◷', options: [[180, 'per1'], [360, 'per2'], [900, 'per5'], [2700, 'per15']] },
   { key: 'quick.difficulty', label: 'difficulty', icon: '⚙', options: [['easy', 'easy'], ['medium', 'medium'], ['hard', 'hard']] },
   { key: 'quick.size', label: 'size', icon: '⚑', options: [[1, 'size1'], [2, 'size2'], [3, 'size3'], [4, 'size4']] },
   {

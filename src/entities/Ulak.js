@@ -75,6 +75,7 @@ export class Ulak {
     this.inKazan = 0; // 0 или знак X казана, в котором лежит улак
     this.tugRival = null; // соперник, который тянет улак
     this.passTo = null; // кому адресован пас
+    this._inSteps = 0;
     this.passTime = 0;
 
     this.mesh = createUlakMesh();
@@ -183,13 +184,21 @@ export class Ulak {
     this.resting = this.vel.lengthSq() < 0.04 && t.y < KAZAN.height;
 
     if (!this.inKazan) {
+      let inside = false;
       for (const s of [-1, 1]) {
         const d = Math.hypot(t.x - s * KAZAN.x, t.z);
         if (d < KAZAN.innerR - 0.15 && t.y < KAZAN.height - 0.05) {
-          this.inKazan = s;
-          return s;
+          // по правилам гол не засчитывается, если улак вылетел из казана по инерции:
+          // ждём, пока он пролежит внутри треть секунды
+          inside = true;
+          if (++this._inSteps >= 20) {
+            this.inKazan = s;
+            this._inSteps = 0;
+            return s;
+          }
         }
       }
+      if (!inside) this._inSteps = 0;
     }
     return 0;
   }
