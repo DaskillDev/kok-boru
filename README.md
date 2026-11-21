@@ -18,7 +18,7 @@ npm run dev
 
 - `src/config.js` — размеры поля, скорости, параметры броска, команды
 - `src/scene/` — рендерер, небо/свет/туман, горы, юрты, поле и казаны, процедурные текстуры
-- `src/entities/` — `HorseModel` (GLB + AnimationMixer), `RiderFigure` (всадник), `Horseman` (сущность), `Ulak`
+- `src/entities/` — `HorseModel` (скелетный конь, смешивание стойка/шаг/галоп), `RiderFigure` (скелетный всадник, поза по костям, калпак), `Horseman` (сущность), `Ulak`
 - `src/game/` — `Match` (правила, без зависимости от рендера), `Input`, `CameraRig`, `Hud`, `AimGuide`
 - `src/physics/PhysicsWorld.js` — мир Rapier: улак как твёрдое тело, сетки казанов, кинематические тела коней
 - `src/ai/BotBrain.js` — ИИ ботов

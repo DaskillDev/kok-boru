@@ -80,7 +80,7 @@ export class CameraRig {
       target.rider.head.getWorldPosition(_head);
       const hx = Math.sin(target.heading);
       const hz = Math.cos(target.heading);
-      _want.set(_head.x + hx * 0.1, _head.y + 0.06, _head.z + hz * 0.1);
+      _want.set(_head.x + hx * 0.22, _head.y - 0.1, _head.z + hz * 0.22);
       _look.set(_head.x + hx * 12, _head.y - 1.6, _head.z + hz * 12);
     } else {
       _want.set(target.pos.x - sx * this.dist, this.height, target.pos.z - cz * this.dist);

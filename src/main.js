@@ -14,6 +14,7 @@ import { createField, kazanCollisionMesh } from './scene/field.js';
 import { Dust } from './scene/Dust.js';
 import { initPhysics, PhysicsWorld } from './physics/PhysicsWorld.js';
 import { loadHorseAsset } from './entities/HorseModel.js';
+import { loadRiderAsset } from './entities/RiderFigure.js';
 import { Horseman } from './entities/Horseman.js';
 import { Ulak } from './entities/Ulak.js';
 import { Input } from './game/Input.js';
@@ -46,7 +47,7 @@ let ulak = null;
 let paused = false;
 
 async function init() {
-  const [assets] = await Promise.all([loadAssets(), loadHorseAsset(), initPhysics()]);
+  const [assets] = await Promise.all([loadAssets(), loadHorseAsset(), loadRiderAsset(), initPhysics()]);
 
   createEnvironment(scene, assets);
   createSteppe(scene, assets);

@@ -50,11 +50,10 @@ export class Horseman {
     this.tilt.add(this.seat);
     this.seat.add(createTack(this.team));
     this.rider = new RiderFigure(this.team);
-    this.rider.group.position.y = 0.12;
     this.seat.add(this.rider.group);
-    // точка, где висит улак (у правого стремени)
+    // точка, где висит улак (у правого стремени; правая сторона всадника — это −X)
     this.carryAnchor = new THREE.Object3D();
-    this.carryAnchor.position.set(0.62, -0.42, 0.18);
+    this.carryAnchor.position.set(-0.6, -0.5, 0.05);
     this.seat.add(this.carryAnchor);
 
     if (isHuman) {
@@ -155,13 +154,13 @@ export class Horseman {
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.heading;
     const groundSpeed = Math.hypot(this.vel.x, this.vel.z) * Math.sign(this.speed || 1);
-    this.horse.update(dt, groundSpeed);
+    this.horse.update(dt, groundSpeed, this.turn);
 
     const bank = THREE.MathUtils.clamp(-this.turn * Math.abs(this.speed) * 0.014, -0.3, 0.3);
     this.tilt.rotation.z += (bank - this.tilt.rotation.z) * (1 - Math.exp(-dt * 8));
 
     const back = this.horse.sampleBack();
-    this.seat.position.set(0, back.y - 0.01, back.z + 0.12);
+    this.seat.position.set(0, back.y, back.z);
     this.seat.rotation.x = back.pitch * 0.7;
     // всадник не наследует весь наклон спины — корпус держит вертикаль
     this.rider.group.rotation.x = -back.pitch * 0.45;
@@ -186,9 +185,9 @@ export class Horseman {
 
   throwOrigin(out = new THREE.Vector3()) {
     return out.set(
-      this.pos.x + Math.sin(this.heading) * 0.6 + Math.cos(this.heading) * 0.35,
+      this.pos.x + Math.sin(this.heading) * 0.6 - Math.cos(this.heading) * 0.35,
       ULAK.releaseHeight,
-      this.pos.z + Math.cos(this.heading) * 0.6 - Math.sin(this.heading) * 0.35,
+      this.pos.z + Math.cos(this.heading) * 0.6 + Math.sin(this.heading) * 0.35,
     );
   }
 }

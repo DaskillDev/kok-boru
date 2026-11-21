@@ -183,7 +183,7 @@ export class Ulak {
     m.position.copy(this.pos);
     if (this.holder) {
       // висит вдоль бока коня
-      m.rotation.set(0.2, this.holder.heading, 1.25);
+      m.rotation.set(0.2, this.holder.heading, -1.25);
       m.position.y -= 0.05;
     } else {
       m.quaternion.copy(this.quat);

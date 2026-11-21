@@ -1,200 +1,217 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
-// Модель лошади: Horse.glb из примеров three.js (см. CREDITS.md).
-// Анимация галопа — морф-таргеты, проигрывается через AnimationMixer.
+// Конь: скелетная модель «Horse» (Henry S, CC-BY 4.0 — см. CREDITS.md).
+// Стойка, шаг и галоп смешиваются по скорости через AnimationMixer;
+// в повороте подмешивается галоп с креном (Gallop_L / Gallop_R).
 
-export const HORSE_SCALE = 0.011;
-const REST_PHASE = 0.7; // фаза цикла, в которой конь «замирает» на месте
+const TARGET_HEIGHT = 2.15; // высота от земли до макушки в стойке, м
+const WALK_REF = 1.9; // скорость (м/с), при которой шаг идёт в темпе 1×
+const GALLOP_REF = 10.5; // то же для галопа
 
 let proto = null;
 
-// Сглаженные нормали для базовой позы и каждого морф-таргета: исходная модель
-// без нормалей и рисуется гранёной; со сглаживанием корпус выглядит округлым.
-function smoothNormals(geo) {
-  const pos = geo.attributes.position;
-  const n = pos.count;
-  const idx = geo.index ? geo.index.array : null;
-  const tris = (idx ? idx.length : n) / 3;
-  const key = new Int32Array(n);
-  const ids = new Map();
-  for (let i = 0; i < n; i++) {
-    const k = `${pos.getX(i).toFixed(1)},${pos.getY(i).toFixed(1)},${pos.getZ(i).toFixed(1)}`;
-    let id = ids.get(k);
-    if (id === undefined) {
-      id = ids.size;
-      ids.set(k, id);
-    }
-    key[i] = id;
-  }
-  const compute = (P) => {
-    const acc = new Float32Array(ids.size * 3);
-    for (let t = 0; t < tris; t++) {
-      const a = idx ? idx[t * 3] : t * 3;
-      const b = idx ? idx[t * 3 + 1] : t * 3 + 1;
-      const c = idx ? idx[t * 3 + 2] : t * 3 + 2;
-      const ux = P[b * 3] - P[a * 3];
-      const uy = P[b * 3 + 1] - P[a * 3 + 1];
-      const uz = P[b * 3 + 2] - P[a * 3 + 2];
-      const vx = P[c * 3] - P[a * 3];
-      const vy = P[c * 3 + 1] - P[a * 3 + 1];
-      const vz = P[c * 3 + 2] - P[a * 3 + 2];
-      const nx = uy * vz - uz * vy;
-      const ny = uz * vx - ux * vz;
-      const nz = ux * vy - uy * vx;
-      for (const v of [a, b, c]) {
-        acc[key[v] * 3] += nx;
-        acc[key[v] * 3 + 1] += ny;
-        acc[key[v] * 3 + 2] += nz;
-      }
-    }
-    const out = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const x = acc[key[i] * 3];
-      const y = acc[key[i] * 3 + 1];
-      const z = acc[key[i] * 3 + 2];
-      const l = Math.hypot(x, y, z) || 1;
-      out[i * 3] = x / l;
-      out[i * 3 + 1] = y / l;
-      out[i * 3 + 2] = z / l;
-    }
-    return out;
-  };
-  const baseP = pos.array;
-  const baseN = compute(baseP);
-  geo.setAttribute('normal', new THREE.BufferAttribute(baseN, 3));
-  const morphs = geo.morphAttributes.position;
-  if (morphs) {
-    const rel = geo.morphTargetsRelative;
-    geo.morphAttributes.normal = morphs.map((m) => {
-      const P = new Float32Array(n * 3);
-      for (let i = 0; i < n * 3; i++) P[i] = rel ? baseP[i] + m.array[i] : m.array[i];
-      const N = compute(P);
-      if (rel) for (let i = 0; i < n * 3; i++) N[i] -= baseN[i];
-      return new THREE.BufferAttribute(N, 3);
-    });
-  }
-}
-
+const findClip = (clips, suffix) => clips.find((c) => c.name.endsWith(suffix));
+const findBone = (root, part) => {
+  let hit = null;
+  root.traverse((o) => {
+    if (!hit && o.isBone && o.name.includes(part)) hit = o;
+  });
+  return hit;
+};
 
 export async function loadHorseAsset() {
-  const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/Horse.glb`);
-  let mesh = null;
-  gltf.scene.traverse((o) => {
-    if (o.isMesh && !mesh) mesh = o;
-  });
-  const clip = gltf.animations[0];
-  smoothNormals(mesh.geometry);
-  mesh.material.flatShading = false;
-  mesh.material.needsUpdate = true;
-  const pos = mesh.geometry.attributes.position;
+  const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/horse_rigged.glb`);
+  const scene = gltf.scene;
+  const clips = {
+    idle: findClip(gltf.animations, '1 Ilde'),
+    walk: findClip(gltf.animations, '|Walk'),
+    gallop: findClip(gltf.animations, '|Gallop'),
+    gallopL: findClip(gltf.animations, '|Gallop_L'),
+    gallopR: findClip(gltf.animations, '|Gallop_R'),
+  };
 
-  // Опорные вершины спины (под седлом): по ним всадник следует за движением корпуса
-  const pick = (z0, z1) => {
-    let best = -1;
-    let bestY = -Infinity;
-    for (let i = 0; i < pos.count; i++) {
-      const z = pos.getZ(i);
-      if (z >= z0 && z <= z1 && Math.abs(pos.getX(i)) < 12 && pos.getY(i) > bestY) {
-        bestY = pos.getY(i);
-        best = i;
+  scene.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.frustumCulled = false;
+      if (o.material) {
+        o.material.envMapIntensity = 0.8;
+        // грива и хвост — плоскости с прозрачностью
+        if (/hair/i.test(o.material.name)) {
+          o.material.alphaTest = 0.4;
+          o.material.transparent = false;
+          o.material.side = THREE.DoubleSide;
+        }
       }
     }
-    return best;
-  };
-  proto = {
-    mesh,
-    clip,
-    backRear: pick(-75, -45),
-    backFront: pick(-25, 5),
-  };
+  });
+
+  // Замер в позе стойки: размер, направление «вперёд», уровень земли
+  const mixer = new THREE.AnimationMixer(scene);
+  mixer.clipAction(clips.idle).play();
+  mixer.update(0);
+  scene.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  const tmp = new THREE.Box3();
+  scene.traverse((o) => {
+    if (o.isSkinnedMesh) {
+      o.computeBoundingBox();
+      tmp.copy(o.boundingBox).applyMatrix4(o.matrixWorld);
+      box.union(tmp);
+    }
+  });
+  const head = findBone(scene, 'BN_Head_00').getWorldPosition(new THREE.Vector3());
+  const pelvis = findBone(scene, 'BN_Pelvis').getWorldPosition(new THREE.Vector3());
+  const chest = findBone(scene, 'BN_Spine_03').getWorldPosition(new THREE.Vector3());
+  const yaw = Math.atan2(head.x - pelvis.x, head.z - pelvis.z);
+  const scale = TARGET_HEIGHT / (box.max.y - box.min.y);
+  const center = new THREE.Vector3((pelvis.x + chest.x) / 2, box.min.y, (pelvis.z + chest.z) / 2);
+  mixer.stopAllAction();
+  mixer.uncacheRoot(scene);
+
+  proto = { scene, clips, yaw, scale, center };
   return proto;
 }
 
+// Масти: множитель к текстуре шкуры и гривы
 export const COATS = {
-  bay: new THREE.Color(0.85, 0.72, 0.62),
-  chestnut: new THREE.Color(1.1, 0.9, 0.6),
-  black: new THREE.Color(0.2, 0.26, 0.36),
-  grey: new THREE.Color(1.0, 1.8, 3.2),
-  palomino: new THREE.Color(1.25, 1.6, 1.4),
-  dun: new THREE.Color(1.5, 2.1, 2.6),
+  bay: { body: 0xffffff, hair: 0xffffff },
+  chestnut: { body: 0xf2b27a, hair: 0xd9a070 },
+  black: { body: 0x55555c, hair: 0x33333a },
+  grey: { body: 0xd8dde6, hair: 0xf0f0f0 },
+  palomino: { body: 0xffd9a0, hair: 0xfff2d8 },
+  dun: { body: 0xd9c49a, hair: 0x6a5a48 },
 };
+
+const _v = new THREE.Vector3();
+const _a = new THREE.Vector3();
+const _b = new THREE.Vector3();
 
 export class HorseModel {
   constructor(coat = 'bay') {
     if (!proto) throw new Error('Horse asset is not loaded');
-    this.mesh = proto.mesh.clone();
-    this.mesh.material = proto.mesh.material.clone();
-    this.mesh.material.color.copy(COATS[coat] ?? COATS.bay);
-    this.mesh.material.roughness = 0.78;
-    this.mesh.material.envMapIntensity = 0.6;
-    this.mesh.scale.setScalar(HORSE_SCALE);
-    this.mesh.castShadow = true;
-    this.mesh.receiveShadow = true;
-    this.mesh.frustumCulled = false;
+    const model = cloneSkinned(proto.scene);
+    // обёртка: +Z — вперёд, начало координат — на земле под серединой корпуса
+    this.mesh = new THREE.Group();
+    const pivot = new THREE.Group();
+    pivot.rotation.y = -proto.yaw;
+    pivot.scale.setScalar(proto.scale);
+    model.position.copy(proto.center).multiplyScalar(-1);
+    pivot.add(model);
+    this.mesh.add(pivot);
 
-    this.mixer = new THREE.AnimationMixer(this.mesh);
-    this.action = this.mixer.clipAction(proto.clip);
-    this.action.play();
-    this.duration = proto.clip.duration;
-    this.action.time = Math.random() * this.duration;
-    this._back = { y: 1.5, z: -0.3, pitch: 0 };
+    // своя масть у каждого коня
+    const tint = COATS[coat] ?? COATS.bay;
+    const cache = new Map();
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const name = o.material.name;
+      if (name !== 'Horse' && name !== 'Hair') return;
+      if (!cache.has(name)) {
+        const m = o.material.clone();
+        m.color.set(name === 'Horse' ? tint.body : tint.hair);
+        cache.set(name, m);
+      }
+      o.material = cache.get(name);
+    });
+
+    this.mixer = new THREE.AnimationMixer(model);
+    this.actions = {};
+    for (const [key, clip] of Object.entries(proto.clips)) {
+      const a = this.mixer.clipAction(clip);
+      a.play();
+      a.setEffectiveWeight(key === 'idle' ? 1 : 0);
+      this.actions[key] = a;
+    }
+    this.weights = { idle: 1, walk: 0, gallop: 0, gallopL: 0, gallopR: 0 };
+
+    // Точка посадки: верх седла в позе стойки, привязанный к кости спины
+    this.spineBack = findBone(model, 'BN_Spine_01');
+    this.spineFront = findBone(model, 'BN_Spine_03');
+    this.seatBone = findBone(model, 'BN_Spine_02');
     this.mixer.update(0);
+    this.mesh.updateMatrixWorld(true);
+    const saddle = new THREE.Box3();
+    model.traverse((o) => {
+      if (o.isSkinnedMesh && o.material.name === 'Saddle') {
+        o.computeBoundingBox();
+        const b = new THREE.Box3().copy(o.boundingBox).applyMatrix4(o.matrixWorld);
+        // у модели два меша с материалом Saddle: уздечка (у головы) и седло — берём то, что на спине
+        if (b.getCenter(_v).z < 0.6) saddle.union(b);
+      }
+    });
+    this._back = { y: 1.5, z: 0, pitch: 0 };
+    if (saddle.isEmpty()) {
+      this.seatBone.getWorldPosition(_v);
+      _v.y += 0.15;
+    } else {
+      // сиденье — чуть ниже верхней точки седла (верх — это лука)
+      saddle.getCenter(_v);
+      _v.y = saddle.max.y - (saddle.max.y - saddle.min.y) * 0.16;
+      _v.x = 0;
+    }
+    this.saddleBox = saddle.clone();
+    this.seatOffset = this.seatBone.worldToLocal(_v.clone());
+    this.bindPitch = this._spinePitch();
+
+    // у каждого коня свой сдвиг фазы, чтобы не двигались синхронно
+    const phase = Math.random();
+    for (const a of Object.values(this.actions)) a.time = phase * a.getClip().duration;
   }
 
-  // speed — скорость по земле, м/с
-  update(dt, speed) {
+  _spinePitch() {
+    this.spineBack.getWorldPosition(_a);
+    this.spineFront.getWorldPosition(_b);
+    this.mesh.worldToLocal(_a);
+    this.mesh.worldToLocal(_b);
+    return Math.atan2(_b.y - _a.y, _b.z - _a.z);
+  }
+
+  // speed — скорость по земле (м/с, со знаком), turn — угловая скорость (рад/с)
+  update(dt, speed, turn = 0) {
     const s = Math.abs(speed);
-    let rate;
-    if (s > 0.7) {
-      rate = 0.75 + s * 0.16;
-    } else {
-      // стоим: доводим цикл до фазы покоя и замираем
-      const phase = this.action.time % this.duration;
-      const left = (REST_PHASE - phase + this.duration) % this.duration;
-      rate = left > 0.04 ? Math.min(1.2, 0.5 + left * 2) : 0;
+    // целевые веса: стойка → шаг → галоп
+    const wGallopAll = THREE.MathUtils.smoothstep(s, 3.2, 6.0);
+    const wIdle = 1 - THREE.MathUtils.smoothstep(s, 0.15, 0.9);
+    const wWalk = Math.max(0, 1 - wIdle - wGallopAll);
+    const side = THREE.MathUtils.clamp(turn / 1.1, -1, 1) * wGallopAll;
+    const target = {
+      idle: wIdle,
+      walk: wWalk,
+      gallop: wGallopAll * (1 - Math.abs(side)),
+      gallopL: wGallopAll * Math.max(0, side),
+      gallopR: wGallopAll * Math.max(0, -side),
+    };
+    const k = 1 - Math.exp(-dt * 7);
+    for (const key in target) {
+      this.weights[key] += (target[key] - this.weights[key]) * k;
+      this.actions[key].setEffectiveWeight(this.weights[key]);
     }
-    this.action.timeScale = rate;
+    const walkRate = THREE.MathUtils.clamp(s / WALK_REF, 0.55, 2.0) * (speed < 0 ? -1 : 1);
+    const gallopRate = THREE.MathUtils.clamp(s / GALLOP_REF, 0.75, 1.7);
+    this.actions.walk.timeScale = walkRate;
+    this.actions.gallop.timeScale = gallopRate;
+    // все варианты галопа идут в одной фазе
+    this.actions.gallopL.timeScale = gallopRate;
+    this.actions.gallopR.timeScale = gallopRate;
+    this.actions.gallopL.time = this.actions.gallop.time;
+    this.actions.gallopR.time = this.actions.gallop.time;
     this.mixer.update(dt);
   }
 
-  // Положение и наклон спины под седлом в локальных координатах (метры)
+  // Положение и наклон спины под седлом в координатах обёртки (метры)
   sampleBack() {
-    const g = this.mesh.geometry;
-    const inf = this.mesh.morphTargetInfluences;
-    const base = g.attributes.position;
-    const morphs = g.morphAttributes.position;
-    const rel = g.morphTargetsRelative;
-    const sample = (i) => {
-      let y = base.getY(i);
-      let z = base.getZ(i);
-      if (morphs && inf) {
-        let sum = 0;
-        let my = 0;
-        let mz = 0;
-        for (let k = 0; k < morphs.length; k++) {
-          const w = inf[k];
-          if (!w) continue;
-          sum += w;
-          my += morphs[k].getY(i) * w;
-          mz += morphs[k].getZ(i) * w;
-        }
-        if (rel) {
-          y += my;
-          z += mz;
-        } else {
-          y = y * (1 - sum) + my;
-          z = z * (1 - sum) + mz;
-        }
-      }
-      return [y * HORSE_SCALE, z * HORSE_SCALE];
-    };
-    const [ry, rz] = sample(proto.backRear);
-    const [fy, fz] = sample(proto.backFront);
+    this.mesh.updateWorldMatrix(true, true);
+    _v.copy(this.seatOffset);
+    this.seatBone.localToWorld(_v);
+    this.mesh.worldToLocal(_v);
     const b = this._back;
-    b.y = (ry + fy) / 2;
-    b.z = (rz + fz) / 2;
-    b.pitch = -Math.atan2(fy - ry, fz - rz);
+    b.y = _v.y;
+    b.z = _v.z;
+    b.pitch = -(this._spinePitch() - this.bindPitch);
     return b;
   }
 }
