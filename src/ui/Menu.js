@@ -1,4 +1,4 @@
-import { settings, setSetting, getSetting, onSettings } from './settings.js';
+import { settings, setSetting, getSetting, onSettings, COAT_SHOP, levelOf } from './settings.js';
 import { t, setLang, applyI18n } from './i18n.js';
 
 // Меню игры: главное, быстрый матч, онлайн (заглушка), настройки, пауза, результат, справка.
@@ -84,6 +84,9 @@ export class Menu {
           <button class="tile tile-quick" data-go="quick" id="tile-quick" disabled>
             <i>♞</i><b data-i18n="quick"></b><small id="quick-sub" data-i18n="loading"></small><span class="arrow">›</span>
           </button>
+          <button class="tile tile-stable" data-go="stable">
+            <i>✦</i><b data-i18n="stable"></b><small data-i18n="stableSub"></small><span class="arrow">›</span>
+          </button>
           <button class="tile tile-online" data-go="online">
             <i>◍</i><b data-i18n="online"></b><small data-i18n="onlineSub"></small><span class="arrow">›</span>
           </button>
@@ -94,6 +97,14 @@ export class Menu {
         <header><button class="back" data-go="main">‹</button><h2 data-i18n="quick"></h2></header>
         <div class="panel-body">${QUICK_ROWS.map(row).join('')}</div>
         <button class="primary" id="play-btn" data-i18n="play"></button>
+      </section>
+
+      <section class="screen panel" data-screen="stable">
+        <header><button class="back" data-go="main">‹</button><h2 data-i18n="stable"></h2><span class="spacer"></span><b class="wallet" id="wallet"></b></header>
+        <div class="panel-body">
+          <div class="coats" id="coats"></div>
+          <p class="note" data-i18n="stableNote"></p>
+        </div>
       </section>
 
       <section class="screen panel" data-screen="online">
@@ -134,6 +145,7 @@ export class Menu {
         <header><h2 id="result-title"></h2></header>
         <div class="panel-body stack">
           <div class="result-score" id="result-score"></div>
+          <div class="result-reward" id="result-reward"></div>
           <button class="primary" id="again-btn" data-i18n="again"></button>
           <button class="secondary" id="result-exit-btn" data-i18n="toMenu"></button>
         </div>
@@ -169,6 +181,15 @@ export class Menu {
       if (seg) {
         const v = seg.dataset.value;
         setSetting(seg.dataset.seg, isNaN(v) ? v : Number(v));
+        return;
+      }
+      const coat = e.target.closest('[data-coat]');
+      if (coat) {
+        const item = COAT_SHOP.find((c) => c.id === coat.dataset.coat);
+        const p = settings.profile;
+        if (p.owned.includes(item.id)) setSetting('profile', { ...p, coat: item.id });
+        else if (p.coins >= item.price)
+          setSetting('profile', { ...p, coins: p.coins - item.price, owned: [...p.owned, item.id], coat: item.id });
         return;
       }
       const tog = e.target.closest('[data-toggle]');
@@ -234,7 +255,18 @@ export class Menu {
     for (const b of this.el.querySelectorAll('[data-toggle]')) b.classList.toggle('on', !!getSetting(b.dataset.toggle));
     for (const r of this.el.querySelectorAll('input[data-range]')) r.value = getSetting(r.dataset.range);
     for (const b of this.el.querySelectorAll('[data-lang]')) b.classList.toggle('active', b.dataset.lang === settings.lang);
-    this.el.querySelector('#profile-name').textContent = settings.nickname || t('guest');
+    const pr = settings.profile;
+    this.el.querySelector('#profile-name').textContent =
+      `${settings.nickname || t('guest')} · ${t('level')} ${levelOf(pr.xp)} · ${pr.coins} ◉`;
+    this.el.querySelector('#wallet').textContent = `${pr.coins} ◉`;
+    this.el.querySelector('#coats').innerHTML = COAT_SHOP.map((c) => {
+      const owned = pr.owned.includes(c.id);
+      const sel = pr.coat === c.id;
+      const label = sel ? t('selected') : owned ? t('choose') : `${t('buy')} · ${c.price} ◉`;
+      const locked = !owned && pr.coins < c.price;
+      return `<button class="coat${sel ? ' active' : ''}" data-coat="${c.id}" ${locked ? 'disabled' : ''}>
+        <i style="background:${c.css}"></i><b>${t(`coat_${c.id}`)}</b><small>${label}</small></button>`;
+    }).join('');
     const st = settings.stats;
     this.el.querySelector('#stats-row').innerHTML = `<td>${st.matches}</td><td>${st.wins}</td><td>${st.draws}</td><td>${st.goals}</td>`;
     const sub = this.el.querySelector('#quick-sub');
@@ -267,9 +299,10 @@ export class Menu {
     return !this.el.classList.contains('hidden');
   }
 
-  showResult(titleKey, scoreHtml) {
+  showResult(titleKey, scoreHtml, rewardText = '') {
     this.el.querySelector('#result-title').textContent = t(titleKey);
     this.el.querySelector('#result-score').innerHTML = scoreHtml;
+    this.el.querySelector('#result-reward').textContent = rewardText;
     this.show('result');
   }
 }

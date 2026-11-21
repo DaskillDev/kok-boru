@@ -37,6 +37,7 @@ export class BotBrain {
     this.throwDist = 14;
     this.aimError = 0;
     this.side = rider.id % 2 === 0 ? 1 : -1;
+    this.role = 'field'; // field | keeper
     this._newAttempt();
   }
 
@@ -76,6 +77,18 @@ export class BotBrain {
     if (me.hasUlak) {
       this._carry(me, c, foes, dist, mates, dt);
       return;
+    }
+
+    // «вратарь» в больших составах держится у своего казана, пока улак далеко
+    if (this.role === 'keeper' && !(ulak.holder && ulak.holder.teamId === me.teamId)) {
+      const ox = ownKazanX(me.teamId);
+      const T = ulak.holder ? ulak.holder.pos : ulak.pos;
+      const dK = Math.hypot(T.x - ox, T.z);
+      if (dK > 24) {
+        const k = 9 / dK;
+        this._drive(ox + (T.x - ox) * k, T.z * k, { arrive: 3 });
+        return;
+      }
     }
 
     const holder = ulak.holder;

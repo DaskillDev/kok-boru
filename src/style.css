@@ -140,7 +140,7 @@ body.touch #minimap { width: 132px; height: 80px; }
     radial-gradient(circle at 50% 50%, var(--gold) 0 4px, transparent 5px),
     linear-gradient(90deg, transparent, var(--gold) 20%, var(--gold) 80%, transparent) center / 100% 2px no-repeat;
 }
-.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; width: min(860px, 100%); margin: 0 auto; }
+.tiles { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 14px; width: min(980px, 100%); margin: 0 auto; }
 .tile {
   position: relative; text-align: left; padding: 16px 18px; border-radius: 18px; min-height: 124px;
   border: 1px solid rgba(255,255,255,.25); box-shadow: 0 10px 30px rgba(0,0,0,.3); overflow: hidden;
@@ -151,6 +151,7 @@ body.touch #minimap { width: 132px; height: 80px; }
 .tile .arrow { position: absolute; right: 14px; bottom: 10px; font-size: 30px; opacity: .8; }
 .tile-quick { background: linear-gradient(140deg, #e9b949, #b9621a); color: #241505; }
 .tile-online { background: linear-gradient(140deg, #2aa3a3, #14506e); }
+.tile-stable { background: linear-gradient(140deg, #7c5cc4, #3a2a78); }
 .tile:not(:disabled):hover { filter: brightness(1.07); }
 
 .panel {
@@ -211,6 +212,7 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 /* ---------- узкие и низкие экраны ---------- */
 @media (max-width: 620px) {
   .tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile-quick { grid-column: 1 / -1; }
   .tile { min-height: 110px; padding: 12px; }
   .settings { grid-template-columns: 1fr; }
   .settings nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
@@ -236,3 +238,14 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 @media (orientation: portrait) and (max-width: 620px) {
   body.touch #rotate-hint { display: block; }
 }
+
+/* ---------- конюшня и награды ---------- */
+.wallet { color: var(--gold); font-size: 17px; }
+.coats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+.coat { padding: 10px 8px; border-radius: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); text-align: center; }
+.coat i { display: block; width: 46px; height: 46px; margin: 0 auto 6px; border-radius: 50%; border: 2px solid rgba(255,255,255,.35); }
+.coat b { display: block; font-size: 14px; }
+.coat small { color: var(--muted); font-size: 12px; }
+.coat.active { border-color: var(--gold); background: rgba(233,185,73,.14); }
+.coat.active small { color: var(--gold); }
+.result-reward { text-align: center; color: var(--gold); font-weight: 700; min-height: 20px; }

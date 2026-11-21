@@ -141,8 +141,30 @@ export class GameAudio {
     this._tone(2100, 1900, 0.6, 0.16, 'square');
   }
 
+  // Постоянный негромкий гул трибун во время матча
+  ambience(on) {
+    if (!this.ctx) return;
+    if (on && !this._amb) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const f = this.ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.value = 520;
+      f.Q.value = 0.5;
+      const g = this.ctx.createGain();
+      g.gain.value = 0.045;
+      src.connect(f).connect(g).connect(this.sfx);
+      src.start();
+      this._amb = { src, g };
+    } else if (!on && this._amb) {
+      this._amb.src.stop();
+      this._amb = null;
+    }
+  }
+
   vibrate(pattern) {
-    if (settings.vibration && navigator.vibrate) navigator.vibrate(pattern);
+    if (settings.vibration && navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(pattern);
   }
 
   // Фоновая мелодия: щипки в ля-минорной пентатонике (похоже на комуз)

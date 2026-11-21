@@ -14,6 +14,7 @@ import {
 import { loadAssets } from './scene/assets.js';
 import { createField, kazanCollisionMesh } from './scene/field.js';
 import { Dust } from './scene/Dust.js';
+import { createArena } from './scene/arena.js';
 import { initPhysics, PhysicsWorld } from './physics/PhysicsWorld.js';
 import { loadHorseAsset } from './entities/HorseModel.js';
 import { loadRiderAsset } from './entities/RiderFigure.js';
@@ -29,7 +30,7 @@ import { TouchControls } from './game/TouchControls.js';
 import { GameAudio } from './game/Audio.js';
 import { BotBrain } from './ai/BotBrain.js';
 import { Menu } from './ui/Menu.js';
-import { settings, setSetting, onSettings, isTouchDevice } from './ui/settings.js';
+import { settings, setSetting, onSettings, isTouchDevice, levelOf } from './ui/settings.js';
 import { t, applyI18n } from './ui/i18n.js';
 
 // До 4 всадников в команде; в матче участвуют первые N из каждой
@@ -53,6 +54,9 @@ const MAPS = {
   autumn: { pitch: 0xf2d79a, steppe: 0xeec98a },
 };
 const QUALITY_ORDER = ['high', 'medium', 'low'];
+// награда за матч: [опыт, монеты]; множитель — за сложность
+const REWARD = { win: [100, 50], draw: [60, 25], lose: [40, 15], goal: [15, 10] };
+const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6 };
 
 const touch = isTouchDevice();
 document.body.classList.toggle('touch', touch);
@@ -94,6 +98,10 @@ let env = null;
 let field = null;
 let steppe = null;
 let tufts = null;
+let arena = null;
+let demo = false; // на фоне меню боты играют показательный матч
+const _goalCam = new THREE.Vector3();
+const _demoCam = new THREE.Vector3();
 let match = null;
 let player = null;
 let riders = [];
@@ -112,7 +120,7 @@ const menu = new Menu({
   onExit: () => exitToMenu(),
 });
 
-const inMatch = () => match && match.state !== 'idle' && match.state !== 'over';
+const inMatch = () => match && !demo && match.state !== 'idle' && match.state !== 'over';
 const near = (r) => r === player || Math.hypot(r.pos.x - player.pos.x, r.pos.z - player.pos.z) < 35;
 const distTo = (r, p) => Math.hypot(r.pos.x - p.x, r.pos.z - p.z);
 const playerName = () => settings.nickname || t('you');
@@ -125,6 +133,7 @@ function applyQuality() {
   postfx.enabled = q === 'high';
   if (env) env.sun.castShadow = q !== 'low';
   if (tufts) tufts.visible = q !== 'low';
+  if (arena) arena.setVisible(q !== 'low' || !touch);
   renderer.setPixelRatio(q === 'low' ? 1 : Math.min(window.devicePixelRatio, q === 'medium' ? 1.5 : 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   postfx.resize(window.innerWidth, window.innerHeight);
@@ -151,6 +160,7 @@ onSettings((key) => {
     applyNames();
   }
   if (key === 'move' || key === 'btnSize' || key === 'leftHanded') touchControls.applySettings();
+  if (key === 'profile' && riders[0]) riders[0].horse.setCoat(settings.profile.coat);
   if (key === 'lang' || key === 'nickname') {
     applyI18n();
     touchControls._label = '';
@@ -168,6 +178,7 @@ async function init() {
   createMountains(scene);
   const yurts = createYurts(scene);
   field = createField(scene, assets);
+  arena = createArena(scene);
   tufts = createGrassTufts(scene, (x, z) => {
     if (Math.abs(x) < FIELD.length / 2 + 9 && Math.abs(z) < FIELD.width / 2 + 9) return true;
     return yurts.some((y) => Math.hypot(y.position.x - x, y.position.z - z) < 4.5);
@@ -176,7 +187,7 @@ async function init() {
   const physics = new PhysicsWorld(kazanCollisionMesh());
   const slots = [0, 0];
   riders = ROSTER.map((r, id) => {
-    const h = new Horseman({ id, ...r, name: r.name || playerName() });
+    const h = new Horseman({ id, ...r, name: r.name || playerName(), coat: id === 0 ? settings.profile.coat : r.coat });
     h.slot = slots[r.teamId]++;
     scene.add(h.group);
     physics.addRider(h);
@@ -192,14 +203,22 @@ async function init() {
     physics,
     events: {
       onCountdown: (n) => {
+        if (demo) return;
         hud.showBanner(String(n), 0.95);
         audio.beep(false);
       },
       onStart: () => {
+        if (demo) return;
         hud.showBanner(t('go'), 0.9);
         audio.beep(true);
       },
+      onOvertime: () => {
+        hud.showBanner(`${t('overtime')}<small>${t('overtimeSub')}</small>`, 2.2, '#ffd34a');
+        audio.whistle();
+      },
       onGoal: (team, scorer) => {
+        arena.cheer();
+        if (demo) return;
         hud.setScore(match.score);
         const who = scorer ? (scorer === player ? t('youScored') : scorer.name) : '';
         hud.showBanner(`${t('goal')}<small>${team.name} · ${who}</small>`, 3, team.css);
@@ -207,46 +226,44 @@ async function init() {
         if (team.id === 0) matchGoals++;
       },
       onPickup: (r) => {
-        if (near(r)) audio.pickup();
+        if (!demo && near(r)) audio.pickup();
       },
       onThrow: (r) => {
-        if (near(r)) audio.throwSound();
+        if (!demo && near(r)) audio.throwSound();
       },
       onPass: (r) => {
-        if (near(r)) audio.throwSound();
+        if (!demo && near(r)) audio.throwSound();
       },
       onSteal: (thief, victim) => {
+        if (demo) return;
         if (thief === player) hud.showBanner(`<small>${t('stolen')}</small>`, 1);
         else if (victim === player) hud.showBanner(`<small>${t('lostUlak')}</small>`, 1.2);
       },
       onImpact: (a, b, strength, x, z) => {
         dust.burst(x, z, Math.min(26, 6 + Math.round(strength * 2)));
+        if (demo) return;
         const mine = a === player || b === player;
         if (mine) rig.shake(strength / 11);
         if (mine || Math.hypot(x - player.pos.x, z - player.pos.z) < 30) audio.impact(mine ? strength : strength * 0.5);
       },
       onTug: (holder, rival) => {
+        if (demo) return;
         if (rival === player) hud.showBanner(`<small>${t('tugRival')}</small>`, 1.2);
         else if (holder === player) hud.showBanner(`<small>${t('tugHolder')}</small>`, 1.2);
       },
       onTugEnd: (holder, rival, stolen) => {
+        if (demo) return;
         if (!stolen && holder === player) hud.showBanner(`<small>${t('held')}</small>`, 0.9);
         else if (!stolen && rival === player) hud.showBanner(`<small>${t('notStolen')}</small>`, 0.9);
       },
-      onEnd: (score) => finishMatch(score),
+      onEnd: (score) => (demo ? startDemo() : finishMatch(score)),
     },
   });
 
-  setHuman(riders[0]);
-  setupRoster(settings.quick.size);
-  match.kickoff();
-  match.state = 'idle';
-  ulak.reset(0, 0, 0.5);
   rig.orbitT = 0.6;
   rig.setMode(settings.camera);
   applyQuality();
-  applyNames();
-  applyWeather(scene, renderer, env, 'clear');
+  startDemo();
 
   input.onPause = () => togglePause();
   input.onCamera = () => {
@@ -328,8 +345,31 @@ function setHuman(r) {
   applyNames();
 }
 
+// Показательный матч ботов на фоне меню
+function startDemo() {
+  demo = true;
+  paused = false;
+  if (player) player.setHuman(false);
+  else player = riders[0];
+  for (const b of brains) {
+    b.setSkill(0.6);
+    b.rider.speedFactor = 1;
+    b.role = 'field';
+  }
+  applyWeather(scene, renderer, env, 'clear');
+  applyMap('jailoo');
+  setupRoster(2);
+  match.configure(match.riders, 240);
+  match.goldenGoal = false;
+  match.start();
+  for (const r of riders) r.tag.visible = false;
+  audio.ambience(false);
+}
+
 function startMatch(cfg) {
   audio.unlock();
+  demo = false;
+  player = null;
   lastCfg = { ...cfg };
   const diff = DIFFICULTY[cfg.difficulty] ?? DIFFICULTY.easy;
   for (const b of brains) {
@@ -337,6 +377,8 @@ function startMatch(cfg) {
     const foe = b.rider.teamId === 1;
     b.setSkill(foe ? diff.skill : 0.55);
     b.rider.speedFactor = foe ? diff.speed : 1;
+    // в составах 3×3 и 4×4 последний всадник команды — «вратарь» у своего казана
+    b.role = cfg.size >= 3 && b.rider.slot === cfg.size - 1 ? 'keeper' : 'field';
   }
   setHuman(riders[0]);
   riders[0].setName(playerName());
@@ -348,7 +390,9 @@ function startMatch(cfg) {
   setupRoster(cfg.size);
   match.configure(match.riders, cfg.time);
   matchGoals = 0;
+  match.goldenGoal = true;
   match.start();
+  audio.ambience(true);
   menu.inMatch = true;
   menu.hide();
   hud.show(true);
@@ -378,18 +422,11 @@ function resume() {
 }
 
 function exitToMenu() {
-  paused = false;
   menu.inMatch = false;
   hud.show(false);
   hud.showBanner('');
   touchControls.setVisible(false);
-  setHuman(riders[0]);
-  setupRoster(settings.quick.size);
-  match.kickoff();
-  match.state = 'idle';
-  ulak.reset(0, 0, 0.5);
-  applyWeather(scene, renderer, env, 'clear');
-  applyMap('jailoo');
+  startDemo();
   menu.show('main');
 }
 
@@ -402,11 +439,25 @@ function finishMatch(score) {
     draws: st.draws + (a === b ? 1 : 0),
     goals: st.goals + matchGoals,
   });
+  // награда: опыт и монеты
+  const res = a > b ? 'win' : a < b ? 'lose' : 'draw';
+  const mult = REWARD_MULT[lastCfg?.difficulty] ?? 1;
+  const xp = Math.round((REWARD[res][0] + matchGoals * REWARD.goal[0]) * mult);
+  const coins = Math.round((REWARD[res][1] + matchGoals * REWARD.goal[1]) * mult);
+  const pr = settings.profile;
+  const levelBefore = levelOf(pr.xp);
+  setSetting('profile', { ...pr, xp: pr.xp + xp, coins: pr.coins + coins });
+  const levelUp = levelOf(pr.xp + xp) > levelBefore ? ` · ${t('level')} ${levelOf(pr.xp + xp)}!` : '';
   audio.whistle();
+  audio.ambience(false);
   hud.showBanner('');
   touchControls.setVisible(false);
   menu.inMatch = false;
-  menu.showResult(a > b ? 'win' : a < b ? 'lose' : 'draw', `${TEAMS[0].name} ${a} : ${b} ${TEAMS[1].name}`);
+  menu.showResult(
+    res,
+    `${TEAMS[0].name} ${a} : ${b} ${TEAMS[1].name}`,
+    `${t('reward')}: +${xp} ${t('xp')} · +${coins} ${t('coins')}${levelUp}`,
+  );
 }
 
 // ---------- смена всадника ----------
@@ -459,7 +510,8 @@ function frame(now) {
 
   if (match) {
     const live = match.state !== 'idle' && !paused;
-    if (live) {
+    if (live && demo) match.update(dt);
+    else if (live) {
       autoSwitch(dt);
       input.apply(player.controls, player, rig.screenRelative);
       match.update(dt);
@@ -475,8 +527,16 @@ function frame(now) {
     }
     aim.update(player);
 
-    if (match.state === 'idle' || match.state === 'over') rig.orbit(dt, match.state === 'over' ? player.pos : ORIGIN);
-    else if (!paused) rig.follow(dt, player, rig.screenRelative ? ulak : null);
+    if (demo) {
+      // камера плавно облетает место, где идёт игра
+      _demoCam.lerp(ulak.pos, 1 - Math.exp(-dt * 0.8));
+      _demoCam.y = 0;
+      rig.orbit(dt, _demoCam, 26, 9);
+    } else if (match.state === 'idle' || match.state === 'over') rig.orbit(dt, match.state === 'over' ? player.pos : ORIGIN);
+    else if (match.state === 'goal' && ulak.inKazan && !paused) {
+      // после гола — облёт казана
+      rig.orbit(dt, _goalCam.set(ulak.inKazan * KAZAN.x, 0, 0), 12, 5.5);
+    } else if (!paused) rig.follow(dt, player, rig.screenRelative ? ulak : null);
     // отладочная камера: window.__game.freeCam = { pos: [x,y,z], look: [x,y,z] }
     const fc = window.__game?.freeCam;
     if (fc) {
@@ -484,8 +544,8 @@ function frame(now) {
       camera.lookAt(...fc.look);
     }
 
-    if (match.state !== 'idle') {
-      hud.setTime(match.time);
+    if (match.state !== 'idle' && !demo) {
+      hud.setTime(match.overtime ? match.overtimeLeft : match.time);
       hud.setStamina(player.stamina, player.exhausted);
       hud.setCharge(player.charging ? player.charge : -1);
       hud.setPossession(possessionText());
@@ -493,6 +553,7 @@ function frame(now) {
       if (touch) touchControls.setActionLabel(player.hasUlak ? 'btnThrow' : ulak.holder ? 'btnSteal' : 'btnGrab');
     }
     field.update(time);
+    arena.update(dt, time);
   }
   hud.update(dt);
   postfx.render();

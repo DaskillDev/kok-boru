@@ -104,19 +104,15 @@ export class HorseModel {
     this.mesh.add(pivot);
 
     // своя масть у каждого коня
-    const tint = COATS[coat] ?? COATS.bay;
-    const cache = new Map();
+    const cache = (this.coatMats = new Map());
     model.traverse((o) => {
       if (!o.isMesh) return;
       const name = o.material.name;
       if (name !== 'Horse' && name !== 'Hair') return;
-      if (!cache.has(name)) {
-        const m = o.material.clone();
-        m.color.set(name === 'Horse' ? tint.body : tint.hair);
-        cache.set(name, m);
-      }
+      if (!cache.has(name)) cache.set(name, o.material.clone());
       o.material = cache.get(name);
     });
+    this.setCoat(coat);
 
     this.mixer = new THREE.AnimationMixer(model);
     this.actions = {};
@@ -160,6 +156,13 @@ export class HorseModel {
     // у каждого коня свой сдвиг фазы, чтобы не двигались синхронно
     const phase = Math.random();
     for (const a of Object.values(this.actions)) a.time = phase * a.getClip().duration;
+  }
+
+  setCoat(coat) {
+    const tint = COATS[coat] ?? COATS.bay;
+    this.coat = coat;
+    this.coatMats.get('Horse')?.color.set(tint.body);
+    this.coatMats.get('Hair')?.color.set(tint.hair);
   }
 
   _spinePitch() {

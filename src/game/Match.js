@@ -45,6 +45,9 @@ export class Match {
     this.timer = 0;
     this._order = 0;
     this.tug = null; // { holder, rival, t, score, bias } — текущая борьба за улак
+    this.goldenGoal = true; // при ничьей — минута до первого гола
+    this.overtime = false;
+    this.overtimeLeft = 0;
   }
 
   // Состав и длительность следующего матча
@@ -53,8 +56,16 @@ export class Match {
     this.duration = duration;
   }
 
+  _finish() {
+    this.state = 'over';
+    for (const r of this.riders) r.frozen = true;
+    this.events.onEnd?.(this.score);
+  }
+
   start() {
     this.score = [0, 0];
+    this.overtime = false;
+    this.overtimeLeft = 0;
     this.time = this.duration;
     this.kickoff();
   }
@@ -95,17 +106,28 @@ export class Match {
         break;
       }
       case 'playing':
+        if (this.overtime) {
+          // дополнительное время: играем до первого гола
+          this.overtimeLeft -= dt;
+          if (this.overtimeLeft <= 0) this._finish();
+          break;
+        }
         this.time -= dt;
         if (this.time <= 0) {
           this.time = 0;
-          this.state = 'over';
-          for (const r of this.riders) r.frozen = true;
-          this.events.onEnd?.(this.score);
+          if (this.goldenGoal && this.score[0] === this.score[1]) {
+            this.overtime = true;
+            this.overtimeLeft = 60;
+            this.events.onOvertime?.();
+          } else this._finish();
         }
         break;
       case 'goal':
         this.timer -= dt;
-        if (this.timer <= 0) this.kickoff();
+        if (this.timer <= 0) {
+          if (this.overtime) this._finish();
+          else this.kickoff();
+        }
         break;
       default:
         break;

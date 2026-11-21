@@ -23,7 +23,21 @@ const DEFAULTS = {
   quick: { time: 180, difficulty: 'easy', size: 2, weather: 'random', map: 'random' },
   // локальная статистика (до появления онлайна и аккаунтов)
   stats: { matches: 0, wins: 0, draws: 0, goals: 0 },
+  // прогресс: опыт, монеты, купленные масти
+  profile: { xp: 0, coins: 0, coat: 'bay', owned: ['bay'] },
 };
+
+// Масти в конюшне: цена в монетах и цвет образца
+export const COAT_SHOP = [
+  { id: 'bay', price: 0, css: '#7a4a2c' },
+  { id: 'chestnut', price: 100, css: '#b06a3a' },
+  { id: 'grey', price: 150, css: '#c9ced6' },
+  { id: 'dun', price: 200, css: '#b9a37a' },
+  { id: 'palomino', price: 300, css: '#e0b874' },
+  { id: 'black', price: 400, css: '#2b2b30' },
+];
+
+export const levelOf = (xp) => 1 + Math.floor(xp / 250);
 
 function load() {
   try {
@@ -33,6 +47,7 @@ function load() {
       ...raw,
       quick: { ...DEFAULTS.quick, ...(raw.quick || {}) },
       stats: { ...DEFAULTS.stats, ...(raw.stats || {}) },
+      profile: { ...DEFAULTS.profile, ...(raw.profile || {}) },
     };
   } catch {
     return structuredClone(DEFAULTS);
