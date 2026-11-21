@@ -384,3 +384,17 @@ html.swipe-on #swipe-up { display: flex; }
 html.ios-swipe, html.ios-swipe body { height: auto; overflow: visible; touch-action: pan-y; }
 html.ios-swipe body { min-height: calc(100vh + 260px); }
 html.ios-swipe #stage { touch-action: none; }
+
+/* ---------- телефон: компактное табло, которое не закрывает кнопки слева и карту справа ---------- */
+body.touch #scoreboard { left: calc(50% + 41px); border-radius: 10px; }
+body.touch .team { gap: 6px; padding: 3px 8px; }
+body.touch .tname { font-size: 0; letter-spacing: 0; }
+body.touch .tname::after { content: attr(data-code); font-size: 12px; font-weight: 700; letter-spacing: .5px; }
+body.touch .score { font-size: 20px; min-width: 14px; }
+body.touch #timer { font-size: 17px; padding: 3px 9px; }
+body.touch #timer small { font-size: 9px; margin-bottom: 1px; }
+body.touch #possession { top: calc(54px + var(--safe-t)); left: calc(50% + 41px); font-size: 12px; padding: 3px 9px; }
+html.narrow body.touch .tname { display: inline; }
+html.narrow body.touch #scoreboard { left: auto; }
+html.narrow body.touch #hud-buttons button { width: 40px; height: 40px; }
+html.narrow body.touch #hud-buttons { gap: 6px; }

@@ -311,6 +311,9 @@ function applyCountries(playerCode, opponentCode) {
   setTeamCountry(1, foe, foeColors, countryName(foe, L));
   document.querySelector('.team-0 .tname').textContent = TEAMS[0].name;
   document.querySelector('.team-1 .tname').textContent = TEAMS[1].name;
+  // на телефоне вместо полного названия показывается короткий код страны (KGZ, KAZ…)
+  document.querySelector('.team-0 .tname').dataset.code = TEAMS[0].code;
+  document.querySelector('.team-1 .tname').dataset.code = TEAMS[1].code;
   document.querySelector('.team-0').style.borderLeftColor = TEAMS[0].css;
   document.querySelector('.team-1').style.borderRightColor = TEAMS[1].css;
   field.setSides();
