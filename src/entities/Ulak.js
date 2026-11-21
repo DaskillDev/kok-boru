@@ -149,8 +149,13 @@ export class Ulak {
     this.holder = null;
     this._teleport(pos.x, pos.y, pos.z, by ? by.heading : 0);
     this.body.setLinvel({ x: vel.x, y: vel.y, z: vel.z }, true);
+    // туша кувыркается вперёд по ходу броска (ось вращения — поперёк скорости) и чуть вразнобой
+    const hv = Math.hypot(vel.x, vel.z);
+    const spin = Math.min(7, 1.5 + hv * 0.35);
+    const ax = hv > 0.5 ? vel.z / hv : 0;
+    const az = hv > 0.5 ? -vel.x / hv : 0;
     this.body.setAngvel(
-      { x: (Math.random() - 0.5) * 7, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 7 },
+      { x: ax * spin + (Math.random() - 0.5) * 2.5, y: (Math.random() - 0.5) * 2.5, z: az * spin + (Math.random() - 0.5) * 2.5 },
       true,
     );
     this.vel.copy(vel);
@@ -160,8 +165,25 @@ export class Ulak {
     this.physics.setUlakHitsHorses(this.collider, false);
   }
 
+  // Копыта отбрасывают лежащую тушу: импульс по ходу коня
+  kick(vx, vy, vz) {
+    const m = ULAK.mass;
+    this.body.applyImpulse({ x: vx * m, y: vy * m, z: vz * m }, true);
+    this.body.applyTorqueImpulse({ x: (Math.random() - 0.5) * 30, y: (Math.random() - 0.5) * 30, z: (Math.random() - 0.5) * 30 }, true);
+    this.resting = false;
+  }
+
   // До шага физики: таймеры
   preStep(dt) {
+    // туша — не мяч: на земле она быстро перестаёт катиться и скользить
+    if (!this.holder && !this.inKazan && this.pos.y < 0.45 && !this.body.isSleeping()) {
+      const av = this.body.angvel();
+      const lv = this.body.linvel();
+      const ka = Math.exp(-dt * ULAK.groundSpinDamp);
+      const kl = Math.exp(-dt * ULAK.groundSlideDamp);
+      this.body.setAngvel({ x: av.x * ka, y: av.y * ka, z: av.z * ka }, false);
+      this.body.setLinvel({ x: lv.x * kl, y: lv.y, z: lv.z * kl }, false);
+    }
     if (this.passTo) {
       this.passTime -= dt;
       if (this.passTime <= 0 || this.holder) this.passTo = null;
@@ -178,10 +200,13 @@ export class Ulak {
   // После шага физики. Возвращает знак X казана, если улак только что упал в чашу, иначе 0
   postStep() {
     if (this.holder) {
-      this.holder.carryAnchor.getWorldPosition(this.pos);
+      // Положение для правил считаем по всаднику, а не по модели: модель обновляется только при отрисовке,
+      // и без неё (быстрая симуляция, будущий сервер) улак «зависал» бы на старом месте.
+      const side = (r, out) => out.set(r.pos.x - Math.cos(r.heading) * 0.6, 1.25, r.pos.z + Math.sin(r.heading) * 0.6);
+      side(this.holder, this.pos);
       // во время борьбы улак растянут между двумя всадниками
       if (this.tugRival) {
-        this.tugRival.carryAnchor.getWorldPosition(_tug);
+        side(this.tugRival, _tug);
         this.pos.lerp(_tug, 0.5);
         this.pos.y += 0.25;
       }
@@ -218,6 +243,15 @@ export class Ulak {
   render(dt, time) {
     const m = this.mesh;
     m.position.copy(this.pos);
+    if (this.holder) {
+      // на экране туша висит точно у стремени и повторяет движения коня
+      this.holder.carryAnchor.getWorldPosition(m.position);
+      if (this.tugRival) {
+        this.tugRival.carryAnchor.getWorldPosition(_tug);
+        m.position.lerp(_tug, 0.5);
+        m.position.y += 0.25;
+      }
+    }
     const legs = m.userData.legs;
     const t = (this._t = (this._t || 0) + dt);
     if (this.holder) {

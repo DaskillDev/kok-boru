@@ -338,7 +338,9 @@ export const EXTRA = {
     otShort: 'ET',
     tipStart: 'Ride to the ulak and grab it — Space (the “Grab” button)',
     tipCarry: 'Hold Space to wind up and release near the enemy kazan. E — pass',
-    tipSprint: 'Shift — sprint: catch an opponent or break away',
+    fumbleLost: 'The ulak was knocked loose!',
+    fumbleWon: 'Knocked it loose!',
+    tipSprint: 'Shift — sprint: catch an opponent or break away. The horse recovers faster at a slow pace',
     stableNote: 'Coins and XP are earned every match: more for a win, goals and higher difficulty.',
   },
 };

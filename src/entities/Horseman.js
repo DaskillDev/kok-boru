@@ -221,15 +221,18 @@ export class Horseman {
     const wantsSprint = c.sprint && throttle > 0.1 && !this.exhausted;
     this.sprinting = wantsSprint && this.stamina > 0;
     if (this.sprinting) {
-      this.stamina -= (STAMINA.drain * dt) / this.breed.stamina;
+      this.stamina -= (STAMINA.drain * (this.hasUlak ? STAMINA.carryDrain : 1) * dt) / this.breed.stamina;
       if (this.stamina <= 0) {
         this.stamina = 0;
         this.exhausted = true;
         this.sprinting = false;
       }
     } else {
-      const r = Math.abs(this.speed) < 2 ? STAMINA.regenIdle : STAMINA.regen;
-      this.stamina = Math.min(1, this.stamina + r * dt);
+      // чем тише ход, тем быстрее отдыхает конь: на галопе силы почти не возвращаются
+      const v0 = Math.abs(this.speed);
+      const k = THREE.MathUtils.clamp((v0 - STAMINA.trotSpeed) / (HORSE.runSpeed - STAMINA.trotSpeed), 0, 1);
+      const r = v0 < 2 ? STAMINA.regenIdle : THREE.MathUtils.lerp(STAMINA.regenTrot, STAMINA.regen, k);
+      this.stamina = Math.min(1, this.stamina + r * dt * (this.inTug ? 0 : 1));
       if (this.exhausted && this.stamina >= STAMINA.exhaustedUntil) this.exhausted = false;
     }
 
@@ -246,7 +249,10 @@ export class Horseman {
     // тяга падает с ростом скорости: с места конь берёт резво, к пределу — всё медленнее
     const pull = THREE.MathUtils.clamp(1.3 - Math.abs(this.speed) / max, 0.3, 1.3);
     if (target > this.speed)
-      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull * this.breed.accel * this.ground.accel;
+      rate =
+        this.speed < 0
+          ? HORSE.brake
+          : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull * this.breed.accel * this.ground.accel * (this.hasUlak ? ULAK.carryAccel : 1);
     else rate = throttle < 0 && this.speed > 0 ? HORSE.brake : throttle === 0 ? HORSE.coast : HORSE.accel;
     const before = this.speed;
     const ds = target - this.speed;
@@ -354,10 +360,16 @@ export class Horseman {
     }
   }
 
+  // Сила броска (множитель): зависит от силы всадника и от того, сколько осталось сил
+  throwPower() {
+    return THREE.MathUtils.lerp(STAMINA.tiredThrow, 1, Math.min(1, this.stamina * 1.6)) * (0.85 + 0.15 * this.skills.power);
+  }
+
   // Параметры броска при заданной силе замаха (0..1)
   throwVelocity(charge, out = new THREE.Vector3(), noise = false) {
-    const h = THREE.MathUtils.lerp(ULAK.minThrowH, ULAK.maxThrowH, charge);
-    const v = THREE.MathUtils.lerp(ULAK.minThrowV, ULAK.maxThrowV, charge);
+    const pw = this.throwPower();
+    const h = THREE.MathUtils.lerp(ULAK.minThrowH, ULAK.maxThrowH, charge) * pw;
+    const v = THREE.MathUtils.lerp(ULAK.minThrowV, ULAK.maxThrowV, charge) * pw;
     // меткость: разброс направления и силы зависит от точности всадника
     const spread = noise ? (0.05 / this.skills.accuracy) * (0.5 + charge) : 0;
     const hd = this.heading + (Math.random() - 0.5) * 2 * spread;

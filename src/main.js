@@ -526,6 +526,19 @@ async function init() {
         if (!stolen && holder === player) hud.showBanner(`<small>${t('held')}</small>`, 0.9);
         else if (!stolen && rival === player) hud.showBanner(`<small>${t('notStolen')}</small>`, 0.9);
       },
+      // улак выбили ударом
+      onFumble: (h, by) => {
+        dust.burst(h.pos.x, h.pos.z, 14);
+        if (demo) return;
+        audio.neigh(h.pos.x, h.pos.z);
+        if (h === player) hud.showBanner(`<small>${t('fumbleLost')}</small>`, 1.2);
+        else if (by === player) hud.showBanner(`<small>${t('fumbleWon')}</small>`, 1.2);
+      },
+      // копыта отбросили лежащий улак
+      onKick: (r, speed) => {
+        dust.burst(ulak.pos.x, ulak.pos.z, 8);
+        if (!demo) audio.impact(Math.min(4, speed * 0.2), ulak.pos.x, ulak.pos.z);
+      },
       onEnd: (score) => (demo ? startDemo() : finishMatch(score)),
       onPassStat: () => {},
     },

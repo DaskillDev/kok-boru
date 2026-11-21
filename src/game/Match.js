@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS, GRAVITY, RULES } from '../config.js';
+import { FIELD, KAZAN, HORSE, ULAK, STAMINA, MATCH_TIME, TEAMS, GRAVITY, RULES } from '../config.js';
 
 // Ближайшие точки двух отрезков на плоскости (x, z)
 function closestSegSeg(p1x, p1z, q1x, q1z, p2x, p2z, q2x, q2z) {
@@ -394,12 +394,22 @@ export class Match {
           if (alongA > 0.75 && Math.abs(alongB) < 0.6 && aInto > bInto + 3) this._ramBy = a;
           else if (alongB > 0.75 && Math.abs(alongA) < 0.6 && bInto > aInto + 3) this._ramBy = b;
         }
-        a.applyImpulse(-jx, -jz, rax, raz);
-        b.applyImpulse(jx, jz, rbx, rbz);
+        const dva = a.applyImpulse(-jx, -jz, rax, raz);
+        const dvb = b.applyImpulse(jx, jz, rbx, rbz);
         if (-vn > 2.5) this.events.onImpact?.(a, b, -vn, (c.x1 + c.x2) / 2, (c.z1 + c.z2) / 2);
+        // сильный удар соперника выбивает улак из рук
+        if (this.state === 'playing' && a.teamId !== b.teamId) {
+          if (a.hasUlak && dva > ULAK.fumbleHit * a.skills.grip) this._fumbleBy = [a, b];
+          else if (b.hasUlak && dvb > ULAK.fumbleHit * b.skills.grip) this._fumbleBy = [b, a];
+        }
       }
     }
 
+    if (this._fumbleBy) {
+      const [h, by] = this._fumbleBy;
+      this._fumbleBy = null;
+      if (h.hasUlak && !(h.stealImmunity > 0.9)) this._fumble(h, by);
+    }
     if (this._ramBy) {
       const r = this._ramBy;
       this._ramBy = null;
@@ -463,6 +473,51 @@ export class Match {
     if (dv > 2.5) this.events.onImpact?.(r, null, dv, r.pos.x + ox, r.pos.z + oz);
   }
 
+  // Улак выбит ударом: падает рядом, сохраняя часть хода всадника
+  _fumble(h, by) {
+    if (this.tug) this._endTug();
+    const pos = new THREE.Vector3(h.pos.x - Math.cos(h.heading) * 0.6, 1.3, h.pos.z + Math.sin(h.heading) * 0.6);
+    const vel = new THREE.Vector3(
+      h.vel.x * 0.55 + (Math.random() - 0.5) * 3,
+      1.5 + Math.random() * 1.5,
+      h.vel.z * 0.55 + (Math.random() - 0.5) * 3,
+    );
+    this.ulak.release(pos, vel, h);
+    h.charging = false;
+    h.charge = 0;
+    h.grabCooldown = 1.1;
+    if (by) by.grabCooldown = Math.max(by.grabCooldown, 0.35);
+    this.events.onFumble?.(h, by);
+  }
+
+  // Кони на ходу задевают лежащий улак копытами и отбрасывают его
+  _hoofKick(dt) {
+    const u = this.ulak;
+    this._kickCd = Math.max(0, (this._kickCd || 0) - dt);
+    if (this._kickCd > 0 || u.holder || u.inKazan || u.pos.y > 0.55 || u.lockTime > 0) return;
+    const L = HORSE.bodyHalfLength + 0.2;
+    for (const r of this.riders) {
+      if (r.penalty > 0) continue;
+      const sp = Math.hypot(r.vel.x, r.vel.z);
+      if (sp < ULAK.kickSpeed) continue;
+      // расстояние от улака до оси корпуса коня
+      const fx = Math.sin(r.heading);
+      const fz = Math.cos(r.heading);
+      const dx = u.pos.x - r.pos.x;
+      const dz = u.pos.z - r.pos.z;
+      const along = THREE.MathUtils.clamp(dx * fx + dz * fz, -L, L);
+      const d = Math.hypot(dx - fx * along, dz - fz * along);
+      if (d > 0.5) continue;
+      const k = 0.3 + Math.random() * 0.3;
+      const side = (Math.random() - 0.5) * sp * 0.35;
+      u.kick(r.vel.x * k + fz * side, 1.2 + Math.random() * 1.6, r.vel.z * k - fx * side);
+      this._kickCd = 0.45;
+      this.looseT = Math.max(0, this.looseT - 2);
+      this.events.onKick?.(r, sp);
+      return;
+    }
+  }
+
   _ulakRules(dt) {
     const ulak = this.ulak;
     const n = this.riders.length;
@@ -494,20 +549,28 @@ export class Match {
       }
 
       // боты хватают автоматически, человек — пробелом; адресат паса ловит сам
-      const wantGrab = r.isHuman && ulak.passTo !== r ? action : true;
+      // (на отбор бот идёт не мгновенно — у него есть время реакции, см. BotBrain)
+      const wantGrab = r.isHuman && ulak.passTo !== r ? action : !ulak.holder || r.botSteal !== false;
       if (!wantGrab || r.grabCooldown > 0) continue;
       const dx = ulak.pos.x - r.pos.x;
       const dz = ulak.pos.z - r.pos.z;
       const d = Math.hypot(dx, dz);
 
       if (!ulak.holder) {
-        if (d < ULAK.pickupDist && ulak.pos.y < ULAK.pickupMaxY && ulak.lockedFor !== r && !ulak.inKazan) {
+        // на скорости дотянуться труднее; быстро летящую тушу не поймать (кроме адресованного паса)
+        const sp = Math.hypot(r.vel.x, r.vel.z);
+        const fast = THREE.MathUtils.clamp((sp - 6) / (HORSE.sprintSpeed - 6), 0, 1);
+        const isPass = ulak.passTo === r;
+        const reach = isPass ? ULAK.pickupDist + 0.4 : THREE.MathUtils.lerp(ULAK.pickupDist, ULAK.pickupDistFast, fast);
+        const rel = Math.hypot(ulak.vel.x - r.vel.x, ulak.vel.y, ulak.vel.z - r.vel.z);
+        const catchable = isPass || ulak.pos.y < 0.7 || rel < ULAK.catchMaxSpeed;
+        if (d < reach && catchable && ulak.pos.y < ULAK.pickupMaxY && ulak.lockedFor !== r && !ulak.inKazan) {
           ulak.attach(r);
           r.mustRelease = true;
-          r.stealImmunity = 0.9;
+          r.stealImmunity = 1.2;
           this.events.onPickup?.(r);
         }
-      } else if (!this.tug && ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.9) {
+      } else if (!this.tug && ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.6) {
         const holder = ulak.holder;
         if (holder.stealImmunity > 0) continue;
         // схватился за улак — начинается борьба («тартыш»)
@@ -519,6 +582,7 @@ export class Match {
         this.events.onTug?.(holder, r);
       }
     }
+    this._hoofKick(dt);
   }
 
   // Лучший адресат паса: напарник впереди, не слишком близко и не слишком далеко
@@ -557,6 +621,7 @@ export class Match {
     r.charging = false;
     r.charge = 0;
     r.grabCooldown = 0.6;
+    r.stamina = Math.max(0, r.stamina - STAMINA.passCost);
     r.rider.playThrow();
     this.events.onPass?.(r, mate);
   }
@@ -577,7 +642,7 @@ export class Match {
     r.stealImmunity = Math.max(r.stealImmunity, 0.7);
     r.jolt = Math.max(r.jolt, 0.4);
     if (this.tug) {
-      if (this.tug.holder === r) this.tug.score -= 0.45;
+      if (this.tug.holder === r) this.tug.score -= 0.35;
       else if (this.tug.rival === r) this.tug.score += 0.3;
     }
     this.events.onFeint?.(r);
@@ -608,13 +673,13 @@ export class Match {
     if (d > ULAK.stealDist + 2.4) {
       // оторвался — улак остаётся у хозяина
       this._endTug();
-      r.grabCooldown = 1.0;
-      h.stealImmunity = 0.7;
+      r.grabCooldown = 1.6;
+      h.stealImmunity = 1.4;
       this.events.onTugEnd?.(h, r, false);
       return;
     }
     // руки и туша связывают всадников: тянет друг к другу и гасит ход
-    const pull = THREE.MathUtils.clamp((d - 1.5) * 3.2, 0, 7);
+    const pull = THREE.MathUtils.clamp((d - 1.5) * 4, 0, 11);
     h.vel.x += nx * pull * dt;
     h.vel.z += nz * pull * dt;
     r.vel.x -= nx * pull * dt;
@@ -630,7 +695,7 @@ export class Match {
     // исход решают сила всадника, хват, выносливость и рывок
     const sH = (1 + 0.6 * h.stamina + (h.sprinting ? 0.35 : 0)) * h.skills.grip;
     const sR =
-      (0.95 + 0.6 * r.stamina + (r.sprinting ? 0.35 : 0) + (r.isHuman && r.controls.action ? 0.3 : 0) + (h.charging ? 0.3 : 0)) *
+      (0.86 + 0.6 * r.stamina + (r.sprinting ? 0.35 : 0) + (r.isHuman && r.controls.action ? 0.3 : 0) + (h.charging ? 0.3 : 0)) *
       r.skills.power;
     tug.score += (sR - sH + tug.bias) * dt;
     tug.t += dt;
@@ -654,12 +719,13 @@ export class Match {
       h.stagger = Math.max(h.stagger, 0.4);
       this.ulak.attach(r);
       r.mustRelease = true;
-      r.stealImmunity = 1.6;
+      r.stealImmunity = 2.2;
       this.events.onSteal?.(r, h);
     } else {
-      h.stealImmunity = 1.3;
-      r.grabCooldown = 1.4;
-      r.stagger = Math.max(r.stagger, 0.35);
+      // отбился — получает передышку, а соперник на пару секунд отстаёт
+      h.stealImmunity = 2.4;
+      r.grabCooldown = 2.2;
+      r.stagger = Math.max(r.stagger, 0.45);
     }
     this.events.onTugEnd?.(h, r, stolen);
   }
@@ -672,6 +738,8 @@ export class Match {
     const vel = r.throwVelocity(r.charge, undefined, true);
     const pos = r.throwOrigin();
     this.ulak.release(pos, vel, r);
+    // бросок тяжёлой туши отнимает силы — тем больше, чем сильнее замах
+    r.stamina = Math.max(0, r.stamina - STAMINA.throwCost - STAMINA.throwCostCharge * r.charge);
     r.charging = false;
     r.charge = 0;
     r.grabCooldown = 0.5;
