@@ -366,7 +366,11 @@ export function createFieldGrass(scene) {
   const L = FIELD.length + 14;
   const W = FIELD.width + 14;
   const count = 34000;
-  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  // Поле разбито на участки: видеокарта рисует только те, что попали в кадр и лежат недалеко от камеры.
+  // Раньше все 34 000 пучков (1,2 млн треугольников) рисовались каждый кадр, даже за спиной.
+  const CX = 14;
+  const CZ = 3;
+  const cells = Array.from({ length: CX * CZ }, () => []);
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const sc = new THREE.Vector3();
@@ -380,22 +384,42 @@ export function createFieldGrass(scene) {
     q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Math.random() * 6.28);
     const k = 0.8 + Math.random() * 0.6;
     sc.set(k, k * (0.7 + Math.random() * 0.6), k);
-    m.compose(p, q, sc);
-    mesh.setMatrixAt(n, m);
     const v = fbm2(p.x * 0.05, p.z * 0.05, 3, 4);
     c.setHSL(0.2 + v * 0.06, 0.45 + v * 0.15, 0.36 + v * 0.16);
-    mesh.setColorAt(n, c);
+    const ix = Math.min(CX - 1, Math.floor((p.x / L + 0.5) * CX));
+    const iz = Math.min(CZ - 1, Math.floor((p.z / W + 0.5) * CZ));
+    cells[iz * CX + ix].push({ m: m.compose(p, q, sc).clone(), c: c.clone() });
     n++;
   }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.receiveShadow = true;
-  mesh.castShadow = false;
-  mesh.frustumCulled = false;
+  const mesh = new THREE.Group();
+  const chunks = [];
+  const cw = L / CX;
+  const cd = W / CZ;
+  cells.forEach((list, i) => {
+    if (!list.length) return;
+    const im = new THREE.InstancedMesh(geo, mat, list.length);
+    list.forEach((it, k) => {
+      im.setMatrixAt(k, it.m);
+      im.setColorAt(k, it.c);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    im.receiveShadow = true;
+    im.castShadow = false;
+    const center = new THREE.Vector3(((i % CX) + 0.5) * cw - L / 2, 0.15, (Math.floor(i / CX) + 0.5) * cd - W / 2);
+    im.boundingSphere = new THREE.Sphere(center, Math.hypot(cw, cd) / 2 + 0.6);
+    im.frustumCulled = true;
+    mesh.add(im);
+    chunks.push({ im, center });
+  });
   scene.add(mesh);
   return {
     mesh,
-    update(time) {
+    // camera — чтобы не рисовать траву дальше maxDist метров: там травинок всё равно не видно
+    update(time, camera = null, maxDist = 95) {
       uTime.value = time;
+      if (!camera) return;
+      const cp = camera.position;
+      for (const ch of chunks) ch.im.visible = Math.hypot(ch.center.x - cp.x, ch.center.z - cp.z) < maxDist + cw;
     },
   };
 }

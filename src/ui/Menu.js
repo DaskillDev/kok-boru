@@ -115,6 +115,7 @@ export class Menu {
           <h1 data-i18n="title"></h1>
           <div class="ornament"></div>
           <p data-i18n="tagline"></p>
+          <small class="build">v ${__BUILD__}</small>
         </div>
         <div class="tiles">
           <button class="tile tile-quick" data-go="rider" id="tile-quick" disabled>
@@ -243,6 +244,19 @@ export class Menu {
         <div class="panel-body"><ul class="help">${HELP_KEYS.map((k) => `<li data-i18n="${k}"></li>`).join('')}</ul></div>
       </section>`;
 
+    // Сразу после смены экрана нажатия не принимаем: на телефоне то же касание иначе «проваливается»
+    // на кнопку, которая появилась под пальцем (экран выбора страны проскакивался, «назад» открывал настройки).
+    // Перехват на фазе захвата — срабатывает раньше обработчиков самих кнопок («Играть», «Продолжить»…).
+    this.el.addEventListener(
+      'click',
+      (e) => {
+        if (performance.now() - (this._shownAt || 0) < 380) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
+      },
+      true,
+    );
     this.el.addEventListener('click', (e) => {
       this.h.onInteract?.();
       const go = e.target.closest('[data-go]');
@@ -440,6 +454,7 @@ export class Menu {
   }
 
   show(screen) {
+    if (screen !== this.screen) this._shownAt = performance.now();
     this.screen = screen;
     this.el.classList.remove('hidden');
     this.el.classList.toggle('dim', screen !== 'main');

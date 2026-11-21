@@ -27,9 +27,10 @@ export function createRenderer(container) {
 
 // Постобработка: затенение в складках (GTAO), лёгкое свечение, тональная компрессия.
 // Клавиша G переключает на прямой рендер для слабых видеокарт.
-export function createPostFX(renderer, scene, camera) {
+export function createPostFX(renderer, scene, camera, { mobile = false } = {}) {
   const size = renderer.getDrawingBufferSize(new THREE.Vector2());
-  const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+  // на телефоне сглаживание вдвое легче: экран и так плотный
+  const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: mobile ? 2 : 4 });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
   // затенение в складках и под корпусами (GTAO) — глубина и объём
@@ -93,8 +94,18 @@ export function createEnvironment(scene, assets) {
   scene.add(sun);
   scene.add(sun.target);
 
-  const texel = (R * 2) / 4096;
+  let texel = (R * 2) / 4096;
   const _f = new THREE.Vector3();
+  // Размер карты теней: 4096 — самые чёткие, 2048 — вчетверо легче для видеокарты
+  function setShadowSize(n) {
+    if (sun.shadow.mapSize.x === n) return;
+    sun.shadow.mapSize.set(n, n);
+    if (sun.shadow.map) {
+      sun.shadow.map.dispose();
+      sun.shadow.map = null;
+    }
+    texel = (R * 2) / n;
+  }
   // привязка к сетке текселей — тени не «дрожат» при движении камеры
   function followShadow(focus) {
     _f.set(Math.round(focus.x / texel) * texel, 0, Math.round(focus.z / texel) * texel);
@@ -102,7 +113,7 @@ export function createEnvironment(scene, assets) {
     sun.position.copy(_f).addScaledVector(sunDir, 200);
   }
 
-  return { sun, sunDir, fogColor: scene.fog.color.clone(), followShadow };
+  return { sun, sunDir, fogColor: scene.fog.color.clone(), followShadow, setShadowSize };
 }
 
 // Бескрайняя степь вокруг поля

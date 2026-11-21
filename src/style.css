@@ -398,3 +398,6 @@ html.narrow body.touch .tname { display: inline; }
 html.narrow body.touch #scoreboard { left: auto; }
 html.narrow body.touch #hud-buttons button { width: 40px; height: 40px; }
 html.narrow body.touch #hud-buttons { gap: 6px; }
+
+/* метка версии сборки */
+.build { margin-top: 6px; font-size: 11px; letter-spacing: 1px; color: rgba(255,255,255,.75); text-shadow: 0 1px 3px #000; }
