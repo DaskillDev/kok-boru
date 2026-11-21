@@ -178,6 +178,104 @@ export class HorseModel {
     this.coatMats.get('Hair')?.color.set(tint.hair);
   }
 
+  // Попона по форме крупа: лучами «обжимаем» сетку по поверхности тела коня в позе покоя
+  // и крепим её к кости таза — она двигается вместе с крупом на галопе и не уходит внутрь.
+  setBlanket(material) {
+    if (this.blanket) {
+      this.blanket.material = material;
+      return;
+    }
+    const body = [];
+    this.model.traverse((o) => {
+      if (o.isSkinnedMesh && o.material.name === 'Horse') body.push(o);
+    });
+    if (!body.length) return;
+    const pelvis = findBone(this.model, 'BN_Pelvis') || this.spineBack;
+
+    // поза покоя (стойка) для замера
+    for (const [k, a] of Object.entries(this.actions)) a.setEffectiveWeight(k === 'idle' ? 1 : 0);
+    const keepT = this.actions.idle.time;
+    this.actions.idle.time = 0;
+    this.mixer.update(0);
+    this.mesh.updateMatrixWorld(true);
+
+    const ray = new THREE.Raycaster();
+    const hit = (origin, dir) => {
+      ray.set(origin, dir);
+      ray.far = 3;
+      const h = ray.intersectObjects(body, false)[0];
+      return h || null;
+    };
+    // высота спины над серединой крупа
+    const top = hit(new THREE.Vector3(0, 4, -0.6), new THREE.Vector3(0, -1, 0));
+    const yc = (top ? top.point.y : 1.4) - 0.42;
+
+    const zs = 9; // вдоль спины
+    const ps = 22; // поперёк, через хребет с боку на бок
+    const z0 = this.saddleBox && !this.saddleBox.isEmpty() ? this.saddleBox.min.z + 0.08 : -0.35;
+    const z1 = z0 - 0.62;
+    const phiMax = 1.32;
+    const pos = [];
+    const uv = [];
+    const o = new THREE.Vector3();
+    const d = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    for (let j = 0; j <= zs; j++) {
+      const z = z0 + ((z1 - z0) * j) / zs;
+      let last = null;
+      for (let i = 0; i <= ps; i++) {
+        const phi = -phiMax + (2 * phiMax * i) / ps;
+        o.set(Math.sin(phi) * 2, yc + Math.cos(phi) * 2, z);
+        d.set(-Math.sin(phi), -Math.cos(phi), 0);
+        const h = hit(o, d);
+        let p;
+        if (h) {
+          n.copy(h.face.normal).transformDirection(h.object.matrixWorld);
+          p = h.point.clone().addScaledVector(n, 0.022);
+          last = p;
+        } else if (last) {
+          p = last.clone().add(new THREE.Vector3(0, -0.05, 0));
+        } else p = o.clone().addScaledVector(d, 1.6);
+        pos.push(p);
+        uv.push((j / zs) * 1.0, i / ps);
+      }
+    }
+    // края свисают чуть ниже и наружу, как ткань
+    for (let j = 0; j <= zs; j++) {
+      for (const i of [0, 1, ps - 1, ps]) {
+        const p = pos[j * (ps + 1) + i];
+        const side = Math.sign(p.x) || 1;
+        const k = i === 0 || i === ps ? 1 : 0.4;
+        p.y -= 0.05 * k;
+        p.x += side * 0.012 * k;
+      }
+    }
+    // в систему координат кости таза
+    const local = [];
+    for (const p of pos) local.push(...pelvis.worldToLocal(p.clone()).toArray());
+    const idx = [];
+    const row = ps + 1;
+    for (let j = 0; j < zs; j++) {
+      for (let i = 0; i < ps; i++) {
+        const a = j * row + i;
+        idx.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(local, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    this.blanket = new THREE.Mesh(g, material);
+    this.blanket.castShadow = true;
+    this.blanket.receiveShadow = true;
+    this.blanket.frustumCulled = false;
+    pelvis.add(this.blanket);
+
+    this.actions.idle.time = keepT;
+    for (const [k, a] of Object.entries(this.actions)) a.setEffectiveWeight(this.weights[k] ?? 0);
+  }
+
   _spinePitch() {
     this.spineBack.getWorldPosition(_a);
     this.spineFront.getWorldPosition(_b);

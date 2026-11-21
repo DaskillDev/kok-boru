@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { HORSE, STAMINA, ULAK, TEAMS } from '../config.js';
 import { HorseModel } from './HorseModel.js';
-import { RiderFigure, createTack } from './RiderFigure.js';
+import { RiderFigure, blanketMaterial } from './RiderFigure.js';
 
 // Пустой набор команд управления. Его заполняет либо клавиатура, либо ИИ,
 // а позже — сеть: сущность не знает, кто ей управляет.
@@ -121,8 +121,7 @@ export class Horseman {
     this.tilt.add(this.horse.mesh);
     this.seat = new THREE.Group(); // следует за спиной коня
     this.tilt.add(this.seat);
-    this.tack = createTack(this.team);
-    this.seat.add(this.tack);
+    this.horse.setBlanket(blanketMaterial(this.team));
     this.rider = new RiderFigure(this.team, number);
     this.seat.add(this.rider.group);
 
@@ -170,9 +169,7 @@ export class Horseman {
   applyTeam() {
     this.team = TEAMS[this.teamId];
     this.rider.setTeam(this.team);
-    this.seat.remove(this.tack);
-    this.tack = createTack(this.team);
-    this.seat.add(this.tack);
+    this.horse.setBlanket(blanketMaterial(this.team));
     this.tag.userData.css = this.team.css;
     this.tag.userData.draw(this.name, this.isHuman);
   }

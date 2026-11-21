@@ -202,97 +202,51 @@ function createHelmet() {
   return g;
 }
 
-// Попона: полотно, облегающее спину коня (эллиптическое сечение)
-function drapeGeometry(rx, ry, phiMax, z0, z1, phiMin = -phiMax, segs = 20, uRepeat = 1) {
-  const pos = [];
-  const uv = [];
-  const idx = [];
-  const zs = 6;
-  for (let j = 0; j <= zs; j++) {
-    const z = z0 + ((z1 - z0) * j) / zs;
-    for (let i = 0; i <= segs; i++) {
-      const phi = phiMin + ((phiMax - phiMin) * i) / segs;
-      pos.push(rx * Math.sin(phi), ry * Math.cos(phi) - ry, z);
-      uv.push((j / zs) * uRepeat, i / segs);
-    }
-  }
-  const row = segs + 1;
-  for (let j = 0; j < zs; j++) {
-    for (let i = 0; i < segs; i++) {
-      const a = j * row + i;
-      idx.push(a, a + row, a + 1, a + 1, a + row, a + row + 1);
-    }
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
-  return g;
-}
-
-const numberMats = new Map();
-// Номер игрока: белые цифры с тёмной обводкой на прозрачном фоне
-function numberMaterial(n) {
-  if (numberMats.has(n)) return numberMats.get(n);
-  const c = document.createElement('canvas');
-  c.width = c.height = 128;
-  const ctx = c.getContext('2d');
-  ctx.font = '900 96px Segoe UI, Arial, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.lineWidth = 10;
-  ctx.strokeStyle = 'rgba(10,14,22,0.9)';
-  ctx.strokeText(String(n), 64, 70);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(String(n), 64, 70);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.MeshStandardMaterial({
-    map: t,
-    transparent: true,
-    roughness: 0.8,
-    polygonOffset: true,
-    polygonOffsetFactor: -4,
-    polygonOffsetUnits: -4,
-  });
-  numberMats.set(n, m);
-  return m;
-}
-
-const tackMats = new Map();
-// Попона в цветах команды (седло и уздечка — в самой модели коня)
-export function createTack(team) {
+const blanketMats = new Map();
+// Материал попоны: сукно в цвет команды с орнаментальной каймой по нижнему краю и бокам
+export function blanketMaterial(team) {
   const key = `${team.color}:${team.dark}:${team.trim}`;
-  if (!tackMats.has(key)) {
-    const trimCss = `#${new THREE.Color(team.trim).getHexString()}`;
-    const darkCss = `#${new THREE.Color(team.dark).getHexString()}`;
-    tackMats.set(key, {
-      cloth: new THREE.MeshStandardMaterial({ color: team.color, roughness: 0.8, side: THREE.DoubleSide }),
-      strip: new THREE.MeshStandardMaterial({
-        map: ornamentStripTexture(trimCss, darkCss),
-        roughness: 0.6,
-        side: THREE.DoubleSide,
-      }),
-    });
+  if (blanketMats.has(key)) return blanketMats.get(key);
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  const base = `#${new THREE.Color(team.color).getHexString()}`;
+  const dark = `#${new THREE.Color(team.dark).getHexString()}`;
+  const trim = `#${new THREE.Color(team.trim).getHexString()}`;
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, 512, 256);
+  // фактура сукна
+  for (let i = 0; i < 6000; i++) {
+    ctx.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)';
+    ctx.fillRect(Math.random() * 512, Math.random() * 256, 2, 1);
   }
-  const tm = tackMats.get(key);
-  const g = new THREE.Group();
-  const rx = 0.36;
-  const ry = 0.5;
-  // лежит позади седла, на крупе
-  g.add(new THREE.Mesh(drapeGeometry(rx, ry, 1.35, -0.95, -0.38), tm.cloth));
-  for (const s of [-1, 1]) {
-    g.add(new THREE.Mesh(drapeGeometry(rx + 0.008, ry + 0.008, s * 1.37, -0.96, -0.37, s * 1.12, 4, 3), tm.strip));
-  }
-  g.position.y = -0.2;
-  g.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
+  // кайма: v=0 и v=1 — нижние края по бокам коня
+  for (const y0 of [0, 216]) {
+    ctx.fillStyle = dark;
+    ctx.fillRect(0, y0, 512, 40);
+    ctx.fillStyle = trim;
+    ctx.fillRect(0, y0 + (y0 ? 0 : 34), 512, 6);
+    for (let x = 0; x < 512; x += 32) {
+      ctx.beginPath();
+      ctx.moveTo(x + 16, y0 + 8);
+      ctx.lineTo(x + 28, y0 + 20);
+      ctx.lineTo(x + 16, y0 + 32);
+      ctx.lineTo(x + 4, y0 + 20);
+      ctx.closePath();
+      ctx.fill();
     }
-  });
-  return g;
+  }
+  // боковые (передний и задний) края
+  ctx.fillStyle = trim;
+  ctx.fillRect(0, 0, 8, 256);
+  ctx.fillRect(504, 0, 8, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, side: THREE.DoubleSide });
+  blanketMats.set(key, m);
+  return m;
 }
 
 export class RiderFigure {
