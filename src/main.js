@@ -118,12 +118,14 @@ applyI18n();
 
 const hud = new Hud();
 const audio = new GameAudio();
+let releaseAudio = () => {};
+audio.holdUntil = new Promise((r) => (releaseAudio = r));
 const container = document.getElementById('app');
 const renderer = createRenderer(container);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(58, stageSize().w / stageSize().h, 0.5, 2600);
 camera.position.set(0, 6, 22);
-const postfx = createPostFX(renderer, scene, camera, { mobile: touch });
+const postfx = createPostFX(renderer, scene, camera);
 
 const input = new Input();
 const rig = new CameraRig(camera, renderer.domElement);
@@ -148,11 +150,7 @@ passRing.visible = false;
 scene.add(passRing);
 const NUMBERS = [7, 10, 5, 3, 9, 11, 4, 8, 6, 2];
 const tips = new Set(); // советы новичку, показанные в этой сессии
-let autoLevel = touch ? 'medium' : 'high'; // текущий уровень в режиме «Авто» (телефон начинает со среднего)
-// Динамическая чёткость: если кадры идут медленно, картинка считается в чуть меньшем разрешении
-// (тени, трава и эффекты остаются), а когда запас есть — возвращается к полному.
-const RES_STEPS = [1, 0.85, 0.72, 0.6];
-const res = { step: 0, t: 0, frames: 0, good: 0, lockUp: 0, before: 0, capped: false };
+let autoLevel = 'high'; // текущий уровень в режиме «Авто»
 let slowT = 0;
 
 // луч из точки экрана на плоскость поля — для режима управления «Касание»
@@ -219,19 +217,13 @@ const playerName = () => settings.nickname || t('you');
 
 function applyQuality() {
   let q = settings.quality;
-  if (q === 'auto') q = autoLevel;
+  if (q === 'auto') q = touch ? 'low' : autoLevel;
   postfx.setLevel(q);
-  if (env) {
-    env.sun.castShadow = q !== 'low';
-    env.setShadowSize(q === 'high' && !touch ? 4096 : 2048);
-  }
+  if (env) env.sun.castShadow = q !== 'low';
   if (tufts) tufts.visible = q !== 'low';
   if (fieldGrass) fieldGrass.mesh.visible = q === 'high' && !mapIsSand;
   if (arena) arena.setVisible(q !== 'low' || !touch);
-  // предел чёткости по уровню; на телефоне экран плотный, поэтому даже «низкое» не мылит картинку
-  const dpr = window.devicePixelRatio || 1;
-  const maxPR = q === 'low' ? Math.min(dpr, touch ? 1.3 : 1) : Math.min(dpr, q === 'medium' ? (touch ? 2 : 1.5) : 2);
-  renderer.setPixelRatio(Math.max(0.6, maxPR * RES_STEPS[res.step]));
+  renderer.setPixelRatio(q === 'low' ? 1 : Math.min(window.devicePixelRatio, q === 'medium' ? 1.5 : 2));
   const S = stageSize();
   renderer.setSize(S.w, S.h);
   postfx.resize(S.w, S.h);
@@ -605,7 +597,6 @@ async function init() {
     hud.showBanner(`<small>${t('camera')}: ${t(m.label)}</small>`, 1.4);
   };
   input.onGraphics = () => {
-    Object.assign(res, { step: 0, capped: false, before: 0, good: 0 });
     let q = settings.quality === 'auto' ? (touch ? 'low' : 'high') : settings.quality;
     q = QUALITY_ORDER[(QUALITY_ORDER.indexOf(q) + 1) % QUALITY_ORDER.length];
     setSetting('quality', q);
@@ -628,6 +619,7 @@ async function init() {
   document.getElementById('menu-full')?.addEventListener('click', toggleFullscreen);
 
   menu.setReady(true);
+  releaseAudio();
   // для отладки и будущих тестов
   window.__game = {
     match,
@@ -740,51 +732,12 @@ function updateUlakArrow() {
 
 // Режим «Авто»: если кадры идут медленно несколько секунд подряд — понижаем качество
 function adaptQuality(rawDt) {
-  if (document.hidden || rawDt > 0.25 || res.capped) return;
-  res.t += rawDt;
-  res.frames++;
-  if (res.t < 1.5) return;
-  const fps = res.frames / res.t;
-  res.t = 0;
-  res.frames = 0;
-  res.lockUp = Math.max(0, res.lockUp - 1.5);
-  // Телефон в режиме экономии сам держит 30 кадров: уменьшение чёткости ничего не даёт — тогда не трогаем
-  if (res.before && Math.abs(fps - res.before) < 1.5 && fps > 27.5 && fps < 32.5) {
-    res.capped = true;
-    res.step = 0;
+  if (settings.quality !== 'auto' || touch || document.hidden || rawDt > 0.25 || autoLevel === 'low') return;
+  slowT = rawDt > 1 / 27 ? slowT + rawDt : Math.max(0, slowT - rawDt * 2);
+  if (slowT > 4) {
+    slowT = 0;
+    autoLevel = autoLevel === 'high' ? 'medium' : 'low';
     applyQuality();
-    return;
-  }
-  res.before = 0;
-  if (fps < 48) {
-    res.good = 0;
-    // одна медленная секунда (загрузка, смена экрана) — ещё не повод; ждём две подряд
-    res.slow = (res.slow || 0) + 1;
-    if (res.slow < 2) return;
-    res.slow = 0;
-    if (res.step < RES_STEPS.length - 1) {
-      res.before = fps;
-      res.step++;
-      res.lockUp = 20; // после снижения 20 секунд не пытаемся вернуть чёткость — без «качелей»
-      applyQuality();
-    } else if (settings.quality === 'auto' && autoLevel !== 'low' && fps < 34) {
-      // и на минимальной чёткости тяжело — убираем эффекты уровнем ниже
-      autoLevel = autoLevel === 'high' ? 'medium' : 'low';
-      res.step = 1;
-      res.lockUp = 30;
-      applyQuality();
-    }
-  } else if (fps > 57 && res.step > 0 && res.lockUp <= 0) {
-    res.slow = 0;
-    res.good += 1.5;
-    if (res.good >= 6) {
-      res.good = 0;
-      res.step--;
-      applyQuality();
-    }
-  } else {
-    res.good = 0;
-    res.slow = 0;
   }
 }
 
@@ -1059,7 +1012,7 @@ function frame(now) {
   }
   hud.update(dt);
   if (env) env.followShadow(rig.mode === 'tv' || rig.mode === 'top' ? rig.focus : player ? player.pos : ORIGIN);
-  if (fieldGrass) fieldGrass.update(time, camera);
+  if (fieldGrass) fieldGrass.update(time);
   cloudUniforms.uCloudTime.value = time;
   postfx.render(time);
 }
@@ -1082,6 +1035,7 @@ window.addEventListener('focus', () => audio.unlock());
 
 requestAnimationFrame(frame);
 init().catch((e) => {
+  releaseAudio();
   console.error(e);
   menu.setReady(false);
 });

@@ -105,6 +105,9 @@ export class GameAudio {
   }
 
   async _load() {
+    // звуки (8 МБ) качаем только после того, как загрузилась сама игра — иначе они делят с ней
+    // медленный интернет и кнопка «Быстрый матч» появляется позже
+    if (this.holdUntil) await this.holdUntil;
     const base = `${import.meta.env.BASE_URL}sounds/`;
     await Promise.all(
       Object.entries(SAMPLES).map(async ([key, file]) => {
