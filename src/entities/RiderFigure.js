@@ -202,6 +202,35 @@ function createHelmet() {
   return g;
 }
 
+const numberMats = new Map();
+// Номер игрока: белые цифры с тёмной обводкой на прозрачном фоне
+function numberMaterial(n) {
+  if (numberMats.has(n)) return numberMats.get(n);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = '900 96px Segoe UI, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(10,14,22,0.9)';
+  ctx.strokeText(String(n), 64, 70);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(String(n), 64, 70);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({
+    map: t,
+    transparent: true,
+    roughness: 0.8,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  });
+  numberMats.set(n, m);
+  return m;
+}
+
 const blanketMats = new Map();
 // Материал попоны: сукно в цвет команды с орнаментальной каймой по нижнему краю и бокам
 export function blanketMaterial(team) {
