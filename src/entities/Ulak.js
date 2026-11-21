@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { KAZAN, ULAK } from '../config.js';
 import { furTexture } from '../scene/textures.js';
+import { furShells } from '../scene/props.js';
 
 // Улак — туша козла. Полёт, кувыркание, отскоки и скатывание считает Rapier (PhysicsWorld).
 
@@ -11,10 +12,16 @@ function createUlakMesh() {
   const g = new THREE.Group();
   const fur = new THREE.MeshStandardMaterial({ map: furTexture(), color: 0xd9cbb8, roughness: 1 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x3a2c24, roughness: 0.9 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.46, 8, 18), fur);
+  const bodyGeo = new THREE.CapsuleGeometry(0.2, 0.46, 8, 18);
+  const body = new THREE.Mesh(bodyGeo, fur);
   body.rotation.x = Math.PI / 2;
   body.scale.set(1.0, 1.0, 0.92);
   g.add(body);
+  // шерсть: несколько полупрозрачных оболочек с «волосками»
+  const shells = furShells(bodyGeo, 6, 0.04);
+  shells.rotation.x = Math.PI / 2;
+  shells.scale.set(1.0, 1.0, 0.92);
+  g.add(shells);
   const belly = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), fur);
   belly.scale.set(1.05, 0.95, 1.3);
   belly.position.set(0, -0.03, -0.05);

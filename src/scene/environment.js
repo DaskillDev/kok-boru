@@ -7,7 +7,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { ColorGradeShader } from './grade.js';
 import { fbm2, ridged2, mulberry32 } from './noise.js';
-import { makeNoiseMap, yurtWallTexture } from './textures.js';
+import { makeNoiseMap } from './textures.js';
+import { createDetailedYurt } from './props.js';
 
 export function createRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -200,74 +201,7 @@ export function createMountains(scene) {
   return mesh;
 }
 
-// Юрта: войлочные стены, купол, түндүк, дверь
-function createYurt(wallMap) {
-  const g = new THREE.Group();
-  const R = 3.3;
-  const wallH = 1.9;
-  const felt = new THREE.MeshStandardMaterial({ color: 0xf1ebdd, roughness: 0.95 });
-  const wallMat = new THREE.MeshStandardMaterial({ map: wallMap, roughness: 0.92 });
-
-  const wall = new THREE.Mesh(new THREE.CylinderGeometry(R, R * 1.02, wallH, 40, 1, true), wallMat);
-  wall.position.y = wallH / 2;
-  g.add(wall);
-
-  // купол — тело вращения
-  const pts = [];
-  for (let i = 0; i <= 12; i++) {
-    const t = i / 12;
-    const r = R * 1.04 * Math.cos(t * Math.PI * 0.46) * (1 - t * 0.08) + 0.02;
-    const y = wallH + Math.sin(t * Math.PI * 0.5) * 1.75;
-    pts.push(new THREE.Vector2(Math.max(r, 0.55), y));
-  }
-  const roof = new THREE.Mesh(new THREE.LatheGeometry(pts, 40), felt);
-  g.add(roof);
-
-  // стяжки на куполе
-  const ropeMat = new THREE.MeshStandardMaterial({ color: 0x8a2a22, roughness: 0.8 });
-  const band = new THREE.Mesh(new THREE.TorusGeometry(R * 1.05, 0.06, 8, 48), ropeMat);
-  band.rotation.x = Math.PI / 2;
-  band.position.y = wallH + 0.02;
-  g.add(band);
-  const band2 = new THREE.Mesh(new THREE.TorusGeometry(R * 0.78, 0.045, 8, 48), ropeMat);
-  band2.rotation.x = Math.PI / 2;
-  band2.position.y = wallH + 1.0;
-  g.add(band2);
-
-  // түндүк
-  const wood = new THREE.MeshStandardMaterial({ color: 0x5a3a22, roughness: 0.7 });
-  const tunduk = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.09, 8, 24), wood);
-  tunduk.rotation.x = Math.PI / 2;
-  tunduk.position.y = wallH + 1.76;
-  g.add(tunduk);
-  for (let i = 0; i < 2; i++) {
-    const bar = new THREE.Mesh(new THREE.CapsuleGeometry(0.035, 1.1, 3, 6), wood);
-    bar.rotation.z = Math.PI / 2;
-    bar.rotation.y = (i * Math.PI) / 2;
-    bar.position.y = wallH + 1.8;
-    g.add(bar);
-  }
-
-  // дверь
-  const doorMat = new THREE.MeshStandardMaterial({ color: 0xa2331f, roughness: 0.7 });
-  const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.6, 0.14), doorMat);
-  door.position.set(0, 0.8, R + 0.02);
-  g.add(door);
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(1.34, 1.74, 0.1), wood);
-  frame.position.set(0, 0.85, R - 0.02);
-  g.add(frame);
-
-  g.traverse((o) => {
-    if (o.isMesh) {
-      o.castShadow = true;
-      o.receiveShadow = true;
-    }
-  });
-  return g;
-}
-
 export function createYurts(scene) {
-  const wallMap = yurtWallTexture();
   const spots = [
     [-34, -54, 0.3, 1],
     [-22, -60, -0.2, 1.15],
@@ -281,7 +215,7 @@ export function createYurts(scene) {
   ];
   const yurts = [];
   for (const [x, z, rot, s] of spots) {
-    const y = createYurt(wallMap);
+    const y = createDetailedYurt(Math.round(x * 7 + z));
     y.position.set(x, 0, z);
     // дверью к полю
     y.rotation.y = Math.atan2(-x, -z) + rot * 0.15;

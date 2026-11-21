@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { FIELD, KAZAN, TEAMS, RULES } from '../config.js';
 import { makeNoiseMap } from './textures.js';
 import { fbm2 } from './noise.js';
+import { kazanMaterials, kazanBoulders } from './props.js';
 import { flagCanvas } from '../data/countries.js';
 
 const flagTex = new Map();
@@ -153,15 +154,8 @@ function createKazan(team) {
   const g = new THREE.Group();
   const { innerR, outerR, height } = KAZAN;
   const pts = kazanProfile();
-  const rough = makeNoiseMap(256, 31, 6);
-  const clay = new THREE.MeshStandardMaterial({
-    color: 0xb9a184,
-    roughness: 0.92,
-    bumpMap: rough,
-    bumpScale: 1.2,
-    side: THREE.DoubleSide,
-  });
-  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 56), clay);
+  // каменная кладка на глиняном растворе
+  const body = new THREE.Mesh(new THREE.LatheGeometry(pts, 96), kazanMaterials().stone);
   body.castShadow = true;
   body.receiveShadow = true;
   g.add(body);
@@ -196,6 +190,7 @@ function createKazan(team) {
   floor.position.y = 0.26;
   floor.receiveShadow = true;
   g.add(floor);
+  g.add(kazanBoulders(outerR, team.id + 3));
   return g;
 }
 
