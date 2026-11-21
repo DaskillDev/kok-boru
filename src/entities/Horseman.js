@@ -131,7 +131,7 @@ export class Horseman {
     this.reins = [-1, 1].map((side) => {
       const m = new THREE.Mesh(reinGeo, reinMat);
       m.userData.side = side;
-      m.castShadow = true;
+      m.castShadow = false; // тень от тонкого ремешка не видна, а стоит отдельной отрисовки
       this.tilt.add(m);
       return m;
     });
@@ -311,10 +311,13 @@ export class Horseman {
     this.speed *= factor;
   }
 
-  // Обновление визуала
-  render(dt) {
+  // Обновление визуала. visible = false — всадник не в кадре: коня и всадника не рисуем и не анимируем
+  // (остаются кольцо, тень-пятно и подпись), это экономит и видеокарту, и процессор.
+  render(dt, visible = true) {
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.heading;
+    this.tilt.visible = visible;
+    if (!visible) return;
     const groundSpeed = Math.hypot(this.vel.x, this.vel.z) * Math.sign(this.speed || 1);
     this.horse.update(dt, groundSpeed, this.turn);
 

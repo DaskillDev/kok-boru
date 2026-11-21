@@ -234,6 +234,7 @@ export function createArena(scene) {
 
   return {
     group,
+    crowd: [bodies, heads, hats],
     setSides,
     setScoreboard,
     setVisible(v) {

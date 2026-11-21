@@ -39,6 +39,21 @@ export function createPostFX(renderer, scene, camera, { mobile = false } = {}) {
   gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
   gtao.blendIntensity = 1.0;
   composer.addPass(gtao);
+  // Затенение считается дважды: сначала вся сцена рисуется ещё раз (нормали и глубина), потом сам эффект.
+  // 1) траву, зрителей и прочую мелочь в этот второй проход не берём — тени в складках на них всё равно не видны;
+  const noAO = [];
+  const hideDefault = gtao._overrideVisibility.bind(gtao);
+  gtao._overrideVisibility = () => {
+    hideDefault();
+    for (const o of noAO) {
+      if (o.visible) {
+        o.visible = false;
+        gtao._visibilityCache.push(o);
+      }
+    }
+  };
+  // 2) сам эффект и свечение считаем в половинном разрешении (см. resize): они размытые по своей природе,
+  //    разницы на глаз нет, а работы видеокарте вчетверо меньше.
   const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.28, 0.65, 0.92);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
@@ -61,6 +76,15 @@ export function createPostFX(renderer, scene, camera, { mobile = false } = {}) {
     },
     resize(w, h) {
       composer.setSize(w, h);
+      const pr = renderer.getPixelRatio();
+      const hw = Math.max(2, Math.round(w * pr * 0.5));
+      const hh = Math.max(2, Math.round(h * pr * 0.5));
+      gtao.setSize(hw, hh);
+      bloom.setSize(hw, hh);
+    },
+    // объекты, которые не участвуют в расчёте затенения
+    excludeFromAO(...objects) {
+      for (const o of objects) if (o && !noAO.includes(o)) noAO.push(o);
     },
   };
 }

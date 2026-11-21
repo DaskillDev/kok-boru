@@ -139,6 +139,9 @@ const tracks = new Tracks(scene);
 initClouds();
 const minimap = new Minimap(document.getElementById('minimap'));
 const ORIGIN = new THREE.Vector3();
+const _frustum = new THREE.Frustum();
+const _projView = new THREE.Matrix4();
+const _cullSphere = new THREE.Sphere(new THREE.Vector3(), 9);
 const ulakArrow = document.getElementById('ulak-arrow');
 const _proj = new THREE.Vector3();
 // кольцо под напарником, которому уйдёт пас
@@ -447,6 +450,7 @@ async function init() {
     return yurts.some((y) => Math.hypot(y.position.x - x, y.position.z - z) < 4.5);
   });
   step('tufts');
+  postfx.excludeFromAO(fieldGrass.mesh, tufts, ...arena.crowd);
 
   physics = new PhysicsWorld(kazanCollisionMesh());
   const slots = [0, 0];
@@ -1019,12 +1023,15 @@ function frame(now) {
     if (!live || demo) audio.silenceRiders();
     if (!paused) {
       const loose = !ulak.holder && !ulak.inKazan && ulak.pos.y < 1.2;
+      _frustum.setFromProjectionMatrix(_projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
       for (const r of match.riders) {
         const d = loose ? Math.hypot(ulak.pos.x - r.pos.x, ulak.pos.z - r.pos.z) : 99;
         r.reach = !r.hasUlak && d < 6 ? THREE.MathUtils.clamp(1 - (d - 1.5) / 4.5, 0, 1) : 0;
         // с какой стороны лежит улак: «влево» в системе всадника — это +X (cos h, −sin h)
         r.reachSide = (ulak.pos.x - r.pos.x) * Math.cos(r.heading) - (ulak.pos.z - r.pos.z) * Math.sin(r.heading) > 0 ? -1 : 1;
-        r.render(dt);
+        // всадников за кадром не рисуем; запас 9 м — чтобы не пропала тень, падающая в кадр
+        _cullSphere.center.set(r.pos.x, 1.3, r.pos.z);
+        r.render(dt, r === player || _frustum.intersectsSphere(_cullSphere));
         if (live) {
           dust.emit(dt, r);
           tracks.track(r);
