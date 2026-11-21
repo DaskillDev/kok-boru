@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Улак Тартыш</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="hud" class="hidden">
+      <div id="scoreboard">
+        <div class="team team-0"><span class="tname">Көк</span><span id="score0" class="score">0</span></div>
+        <div id="timer">3:00</div>
+        <div class="team team-1"><span id="score1" class="score">0</span><span class="tname">Кызыл</span></div>
+      </div>
+      <div id="possession"></div>
+      <div id="banner"></div>
+      <div id="bars">
+        <div class="bar-label">Күч (выносливость)</div>
+        <div class="bar"><div id="stamina-fill"></div></div>
+        <div id="charge-wrap" class="hidden">
+          <div class="bar-label">Сила броска</div>
+          <div class="bar charge"><div id="charge-fill"></div></div>
+        </div>
+      </div>
+      <div id="hint">W/S — галоп/тормоз · A/D — поворот · Shift — рывок · Пробел — схватить / бросить (держать = сила) · Esc — пауза</div>
+    </div>
+
+    <div id="menu" class="overlay">
+      <div class="panel">
+        <h1>Улак Тартыш</h1>
+        <p class="sub">Конная игра степи · матч 2×2 · 3 минуты</p>
+        <div id="menu-result" class="hidden"></div>
+        <ul class="controls">
+          <li><b>W / ↑</b> — вперёд, <b>S / ↓</b> — тормоз / назад</li>
+          <li><b>A D / ← →</b> — поворот коня</li>
+          <li><b>Shift</b> — рывок (тратит выносливость)</li>
+          <li><b>Пробел</b> — подхватить улак рядом или вырвать у соперника</li>
+          <li><b>Пробел (удерживать)</b> — замах, отпустить — бросок в казан соперника</li>
+        </ul>
+        <button id="start-btn" disabled>Загрузка…</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
