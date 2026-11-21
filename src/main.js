@@ -37,6 +37,7 @@ import { BotBrain } from './ai/BotBrain.js';
 import { Menu } from './ui/Menu.js';
 import { settings, setSetting, onSettings, isTouchDevice, levelOf } from './ui/settings.js';
 import { t, applyI18n } from './ui/i18n.js';
+import { applyStage, stageSize, lockLandscape } from './ui/viewport.js';
 
 // До 4 всадников в команде; в матче участвуют первые N из каждой
 const ROSTER = [
@@ -69,6 +70,7 @@ const REWARD = { win: [100, 50], draw: [60, 25], lose: [40, 15], goal: [15, 10] 
 const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6, expert: 2 };
 
 const touch = isTouchDevice();
+applyStage(touch);
 // браузер разрешает звук только после первого касания или клавиши — тогда и включаем музыку
 const firstGesture = () => audio.unlock();
 window.addEventListener('pointerdown', firstGesture, { once: true });
@@ -81,7 +83,7 @@ const audio = new GameAudio();
 const container = document.getElementById('app');
 const renderer = createRenderer(container);
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.5, 2600);
+const camera = new THREE.PerspectiveCamera(58, stageSize().w / stageSize().h, 0.5, 2600);
 camera.position.set(0, 6, 22);
 const postfx = createPostFX(renderer, scene, camera);
 
@@ -117,7 +119,8 @@ const ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const _ndc = new THREE.Vector2();
 const _hit = new THREE.Vector3();
 function screenToField(cx, cy) {
-  _ndc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+  const S = stageSize();
+  _ndc.set((cx / S.w) * 2 - 1, -(cy / S.h) * 2 + 1);
   raycaster.setFromCamera(_ndc, camera);
   if (!raycaster.ray.intersectPlane(ground, _hit)) return null;
   return {
@@ -181,8 +184,9 @@ function applyQuality() {
   if (fieldGrass) fieldGrass.mesh.visible = q === 'high' && !mapIsSand;
   if (arena) arena.setVisible(q !== 'low' || !touch);
   renderer.setPixelRatio(q === 'low' ? 1 : Math.min(window.devicePixelRatio, q === 'medium' ? 1.5 : 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  postfx.resize(window.innerWidth, window.innerHeight);
+  const S = stageSize();
+  renderer.setSize(S.w, S.h);
+  postfx.resize(S.w, S.h);
 }
 
 function applyNames() {
@@ -550,6 +554,7 @@ async function init() {
   });
   document.getElementById('btn-full').addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen?.();
+    else if (touch) lockLandscape();
     else document.documentElement.requestFullscreen?.().catch(() => {});
   });
 
@@ -653,8 +658,7 @@ function updateUlakArrow() {
         y = -y;
       }
       const a = Math.atan2(y, x);
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+      const { w, h } = stageSize();
       const px = w / 2 + Math.cos(a) * (w / 2 - 34);
       const py = h / 2 - Math.sin(a) * (h / 2 - 90);
       ulakArrow.style.transform = `translate(${px}px, ${py}px) rotate(${Math.PI / 2 - a}rad)`;
@@ -701,6 +705,7 @@ function startDemo() {
 
 function startMatch(cfg) {
   audio.unlock();
+  if (touch) lockLandscape();
   demo = false;
   player = null;
   lastCfg = { ...cfg };
@@ -944,10 +949,11 @@ function frame(now) {
 }
 
 window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+  const S = applyStage(touch);
+  camera.aspect = S.w / S.h;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  postfx.resize(window.innerWidth, window.innerHeight);
+  renderer.setSize(S.w, S.h);
+  postfx.resize(S.w, S.h);
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && inMatch() && !paused) togglePause();
@@ -960,3 +966,6 @@ init().catch((e) => {
 });
 
 window.__config = { FIELD, KAZAN, TEAMS, CAMERA_MODES };
+
+// поворот телефона и смена размеров окна
+window.addEventListener('orientationchange', () => setTimeout(() => window.dispatchEvent(new Event('resize')), 250));

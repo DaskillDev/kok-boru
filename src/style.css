@@ -19,13 +19,16 @@ html, body {
   font-family: 'Segoe UI', 'Trebuchet MS', system-ui, sans-serif;
   user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none;
 }
-#app, #app canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#stage { position: fixed; left: 0; top: 0; width: var(--sw, 100vw); height: var(--sh, 100vh); overflow: hidden; }
+/* телефон держат вертикально — поворачиваем всю игру в горизонталь */
+html.rotated #stage { transform-origin: 0 0; transform: translateY(100vh) rotate(-90deg); }
+#app, #app canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .hidden { display: none !important; }
 button { font: inherit; color: inherit; border: 0; background: none; cursor: pointer; }
 button:disabled { cursor: default; opacity: .55; }
 
 /* ---------- HUD ---------- */
-#hud { position: fixed; inset: 0; pointer-events: none; }
+#hud { position: absolute; inset: 0; pointer-events: none; }
 #hud button, #hud #touch { pointer-events: auto; }
 #hud-buttons { position: absolute; top: calc(12px + var(--safe-t)); left: calc(12px + var(--safe-l)); display: flex; gap: 8px; }
 #hud-buttons button {
@@ -110,7 +113,7 @@ body.touch #bars { left: 50%; transform: translateX(-50%); bottom: calc(10px + v
 body.touch #minimap { width: 132px; height: 80px; }
 
 /* ---------- меню ---------- */
-.overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 14px; }
+.overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 14px; }
 .overlay.dim { background: radial-gradient(ellipse at center, rgba(8,14,22,.35), rgba(8,14,22,.78)); }
 .screen { display: none; }
 .screen.active { display: flex; flex-direction: column; }
@@ -210,34 +213,28 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 #nickname { font: inherit; color: var(--text); background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 220px; user-select: text; -webkit-user-select: text; }
 
 /* ---------- узкие и низкие экраны ---------- */
-@media (max-width: 620px) {
-  .tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
-  .tile-quick { grid-column: 1 / -1; }
-  .tile { min-height: 110px; padding: 12px; }
-  .settings { grid-template-columns: 1fr; }
-  .settings nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
-  .settings nav button { white-space: nowrap; }
-  select { min-width: 120px; }
-  #minimap { display: none; }
-  .tname { display: none; }
-  #hud-buttons { gap: 5px; }
-  #hud-buttons button { width: 34px; height: 34px; font-size: 13px; }
-  #scoreboard { left: auto; right: calc(10px + var(--safe-r)); transform: none; }
-  .score { font-size: 22px; }
-  #timer { font-size: 19px; padding: 4px 10px; }
-}
-@media (max-height: 460px) {
-  .hero h1 { font-size: 40px; }
-  .tile { min-height: 84px; padding: 10px 14px; }
-  .tile i { display: none; }
-  .settings-body { max-height: 48vh; }
-  .panel-body { max-height: 52vh; }
-  .primary, .secondary { padding: 10px; margin-bottom: 10px; }
-  #possession { display: none; }
-}
-@media (orientation: portrait) and (max-width: 620px) {
-  body.touch #rotate-hint { display: block; }
-}
+html.narrow .tiles { grid-template-columns: 1fr 1fr; gap: 10px; }
+html.narrow .tile-quick { grid-column: 1 / -1; }
+html.narrow .tile { min-height: 110px; padding: 12px; }
+html.narrow .settings { grid-template-columns: 1fr; }
+html.narrow .settings nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
+html.narrow .settings nav button { white-space: nowrap; }
+html.narrow select { min-width: 120px; }
+html.narrow #minimap { display: none; }
+html.narrow .tname { display: none; }
+html.narrow #hud-buttons { gap: 5px; }
+html.narrow #hud-buttons button { width: 34px; height: 34px; font-size: 13px; }
+html.narrow #scoreboard { left: auto; right: calc(10px + var(--safe-r)); transform: none; }
+html.narrow .score { font-size: 22px; }
+html.narrow #timer { font-size: 19px; padding: 4px 10px; }
+html.short .hero h1 { font-size: 40px; }
+html.short .tile { min-height: 84px; padding: 10px 14px; }
+html.short .tile i { display: none; }
+html.short .settings-body { max-height: 48vh; }
+html.short .panel-body { max-height: 52vh; }
+html.short .primary, html.short .secondary { padding: 10px; margin-bottom: 10px; }
+html.short #possession { display: none; }
+
 
 /* ---------- конюшня и награды ---------- */
 .wallet { color: var(--gold); font-size: 17px; }
@@ -277,7 +274,7 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 #rider-name { font: inherit; color: var(--text); background: rgba(0,0,0,.35); border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; width: 220px; user-select: text; -webkit-user-select: text; }
 .tiles { grid-template-columns: 1.3fr 1fr 1fr 1fr; }
 .tile-enc { background: linear-gradient(140deg, #b2683b, #5a2d14); }
-@media (max-width: 620px) { .tiles { grid-template-columns: 1fr 1fr; } }
+html.narrow .tiles { grid-template-columns: 1fr 1fr; }
 
 /* ---------- энциклопедия ---------- */
 .enc { display: grid; grid-template-columns: 210px 1fr; min-height: 0; }
@@ -288,7 +285,8 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 .enc article { padding: 16px 20px; line-height: 1.6; }
 .enc article h3 { margin: 0 0 8px; font-size: 22px; }
 .enc article .secondary { margin: 10px 0 0; width: auto; padding: 10px 18px; }
-@media (max-width: 620px) { .enc { grid-template-columns: 1fr; } .enc nav { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); } }
+html.narrow .enc { grid-template-columns: 1fr; }
+html.narrow .enc nav { max-height: 30vh; border-right: 0; border-bottom: 1px solid var(--line); }
 #view3d { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 5; }
 #view3d button { padding: 12px 26px; border-radius: 12px; font-weight: 800; font-size: 16px; background: linear-gradient(180deg, #f3c95a, #d9951f); color: #221405; }
 
@@ -309,3 +307,15 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 .duel-opts button.bad { background: #a8322c; }
 .duel-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); margin-top: 14px; overflow: hidden; }
 .duel-bar i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, #6fd3ff, #f3c95a); }
+
+/* кнопки вверху — поверх сенсорного слоя, иначе касания до них не доходят */
+#touch { z-index: 1; }
+#hud-buttons, #scoreboard, #minimap { z-index: 3; }
+#hud-buttons { pointer-events: auto; }
+body.touch #hud-buttons { gap: 10px; }
+body.touch #hud-buttons button { width: 46px; height: 46px; font-size: 17px; border-radius: 12px; }
+#rotate-hint { display: none !important; }
+#duel, #view3d { position: absolute; }
+/* меню, дуэль и просмотр 3D — всегда поверх интерфейса матча */
+#menu { z-index: 10; }
+#duel, #view3d { z-index: 11; }

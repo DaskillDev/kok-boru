@@ -1,5 +1,6 @@
 import { settings } from '../ui/settings.js';
 import { t } from '../ui/i18n.js';
+import { toStage, stageRect } from '../ui/viewport.js';
 
 // Сенсорное управление: джойстик (плавающий или фиксированный) либо езда к точке касания,
 // плюс кнопки «Рывок», «Отбор/Бросок», «Пас», «Финт». Пишет в input.virtual.
@@ -82,23 +83,24 @@ export class TouchControls {
 
   _down(e) {
     if (e.target.closest('#touch-buttons')) return;
+    const p = toStage(e.clientX, e.clientY);
     if (settings.move === 'touch') {
       this.targetId = e.pointerId;
-      this.input.virtual.target = this.toWorld(e.clientX, e.clientY);
+      this.input.virtual.target = this.toWorld(p.x, p.y);
       return;
     }
     if (this.stickId !== null) return;
-    const zr = this.zone.getBoundingClientRect();
-    if (e.clientX < zr.left || e.clientX > zr.right || e.clientY < zr.top) return;
+    const zr = stageRect(this.zone);
+    if (p.x < zr.left || p.x > zr.right || p.y < zr.top) return;
     this.stickId = e.pointerId;
-    const sr = this.stick.getBoundingClientRect();
+    const sr = stageRect(this.stick);
     if (settings.move === 'joystick') {
       // плавающий джойстик: центр встаёт под палец
       this.stick.style.right = 'auto';
       this.stick.style.bottom = 'auto';
-      this.stick.style.left = `${e.clientX - zr.left - sr.width / 2}px`;
-      this.stick.style.top = `${e.clientY - zr.top - sr.height / 2}px`;
-      this.center = { x: e.clientX, y: e.clientY };
+      this.stick.style.left = `${p.x - zr.left - sr.width / 2}px`;
+      this.stick.style.top = `${p.y - zr.top - sr.height / 2}px`;
+      this.center = { x: p.x, y: p.y };
     } else {
       this.center = { x: sr.left + sr.width / 2, y: sr.top + sr.height / 2 };
     }
@@ -109,13 +111,14 @@ export class TouchControls {
 
   _move(e) {
     const v = this.input.virtual;
+    const p = toStage(e.clientX, e.clientY);
     if (e.pointerId === this.targetId) {
-      v.target = this.toWorld(e.clientX, e.clientY) ?? v.target;
+      v.target = this.toWorld(p.x, p.y) ?? v.target;
       return;
     }
     if (e.pointerId !== this.stickId) return;
-    let dx = (e.clientX - this.center.x) / this.radius;
-    let dy = (e.clientY - this.center.y) / this.radius;
+    let dx = (p.x - this.center.x) / this.radius;
+    let dy = (p.y - this.center.y) / this.radius;
     const m = Math.hypot(dx, dy);
     if (m > 1) {
       dx /= m;

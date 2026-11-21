@@ -8,9 +8,10 @@
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <div id="app"></div>
+    <div id="stage">
+      <div id="app"></div>
 
-    <div id="hud" class="hidden">
+      <div id="hud" class="hidden">
       <div id="hud-buttons">
         <button id="btn-pause" aria-label="pause">❚❚</button>
         <button id="btn-full" aria-label="fullscreen">⛶</button>
@@ -46,18 +47,19 @@
           <button id="tb-action" data-i18n="btnSteal"></button>
         </div>
       </div>
-    </div>
+      </div>
 
-    <div id="duel" class="hidden">
+      <div id="duel" class="hidden">
       <div class="duel-title"></div>
       <div class="duel-q"></div>
       <div class="duel-opts"></div>
       <div class="duel-bar"><i></i></div>
+      </div>
+
+      <div id="view3d" class="hidden"><button id="view3d-close" data-i18n="close"></button></div>
+
+      <div id="menu" class="overlay"></div>
     </div>
-
-    <div id="view3d" class="hidden"><button id="view3d-close" data-i18n="close"></button></div>
-
-    <div id="menu" class="overlay"></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

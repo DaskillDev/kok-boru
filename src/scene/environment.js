@@ -13,7 +13,9 @@ import { createDetailedYurt } from './props.js';
 export function createRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  const sw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sw')) || window.innerWidth;
+  const sh = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--sh')) || window.innerHeight;
+  renderer.setSize(sw, sh);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.64;
