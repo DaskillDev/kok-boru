@@ -125,6 +125,7 @@ let paused = false;
 let lastCfg = null;
 let switchTimer = 0;
 let matchGoals = 0;
+let lastThrow = null; // для «ахов» трибун, если бросок прошёл рядом с казаном
 
 const menu = new Menu({
   onInteract: () => audio.unlock(),
@@ -235,7 +236,10 @@ async function init() {
       onStart: () => {
         if (demo) return;
         hud.showBanner(t('go'), 0.9);
-        audio.beep(true);
+        audio.whistle();
+        // старт с линии — всадники кричат, кони ржут
+        for (const r of match.riders) if (Math.random() < 0.5) setTimeout(() => audio.shout(r.pos.x, r.pos.z, 0.9), Math.random() * 500);
+        audio.neigh(player.pos.x, player.pos.z, true);
         setTimeout(() => tip('tipStart', 3), 1100);
       },
       onSides: () => {
@@ -245,18 +249,20 @@ async function init() {
       onPeriodEnd: (n) => {
         if (demo) return;
         hud.showBanner(`${t('periodEnd')} ${n}<small>${t('swapSides')}</small>`, 3.2);
-        audio.whistle();
+        audio.whistle(true);
+        setTimeout(() => audio.goal(true), 400);
       },
       onWhistle: (reason) => {
         if (demo) return;
         hud.showBanner(`${t(reason === 'out' ? 'out' : 'loose')}<small>${t('duel')} — ${t('duelSub')}</small>`, 2.6);
         audio.whistle();
+        lastThrow = null;
       },
       onFoul: (r, kind, dur) => {
         if (demo) return;
         const who = r === player ? t('youPenalty') : r.name;
         hud.showBanner(`<small>${t('foul')}: ${t('foulRam')} · ${who} · ${t('penaltyOf')} ${Math.round(dur)} с</small>`, 2.4, '#ffb04a');
-        audio.whistle();
+        audio.foul(r.teamId === player.teamId);
       },
       onPenaltyEnd: (r) => {
         if (!demo && r === player) hud.showBanner(`<small>${t('you')} ${t('back2game')}</small>`, 1.2);
@@ -264,7 +270,7 @@ async function init() {
       onOvertime: () => {
         if (demo) return;
         hud.showBanner(`${t('overtime')}<small>${t('overtimeSub')}</small>`, 2.2, '#ffd34a');
-        audio.whistle();
+        audio.whistle(true);
       },
       onGoal: (team, scorer) => {
         arena.cheer();
@@ -275,21 +281,28 @@ async function init() {
         hud.setScore(match.score);
         const who = scorer ? (scorer === player ? t('youScored') : scorer.name) : '';
         hud.showBanner(`${t('goal')}<small>${team.name} · ${who}</small>`, 3, team.css);
-        audio.goal();
+        audio.goal(team.id === player.teamId);
+        if (scorer) audio.shout(scorer.pos.x, scorer.pos.z, 1.3);
+        lastThrow = null;
         if (team.id === 0) matchGoals++;
       },
       onPickup: (r) => {
-        if (!demo && near(r)) audio.pickup();
+        if (!demo) audio.pickup(r.pos.x, r.pos.z);
         if (!demo && r === player) tip('tipCarry', 3.2);
       },
       onThrow: (r) => {
-        if (!demo && near(r)) audio.throwSound();
+        if (demo) return;
+        const power = THREE.MathUtils.clamp((ulak.vel.length() - 6) / 18, 0, 1);
+        audio.throwSound(r.pos.x, r.pos.z, power);
+        lastThrow = { t: 0, team: r.teamId };
       },
       onPass: (r) => {
-        if (!demo && near(r)) audio.throwSound();
+        if (!demo) audio.throwSound(r.pos.x, r.pos.z, 0.3);
       },
       onSteal: (thief, victim) => {
         if (demo) return;
+        audio.shout(thief.pos.x, thief.pos.z, 1.1);
+        audio.steal(thief.teamId === player.teamId);
         if (thief === player) hud.showBanner(`<small>${t('stolen')}</small>`, 1);
         else if (victim === player) hud.showBanner(`<small>${t('lostUlak')}</small>`, 1.2);
       },
@@ -298,10 +311,13 @@ async function init() {
         if (demo) return;
         const mine = a === player || b === player;
         if (mine) rig.shake(strength / 11);
-        if (mine || Math.hypot(x - player.pos.x, z - player.pos.z) < 30) audio.impact(mine ? strength : strength * 0.5);
+        audio.impact(strength, x, z);
       },
       onTug: (holder, rival) => {
         if (demo) return;
+        audio.shout(rival.pos.x, rival.pos.z, 1);
+        setTimeout(() => audio.shout(holder.pos.x, holder.pos.z, 0.9), 250);
+        if (Math.random() < 0.5) audio.neigh(holder.pos.x, holder.pos.z);
         if (rival === player) hud.showBanner(`<small>${t('tugRival')}</small>`, 1.2);
         else if (holder === player) hud.showBanner(`<small>${t('tugHolder')}</small>`, 1.2);
       },
@@ -368,6 +384,7 @@ async function init() {
     physics,
     menu,
     startMatch,
+    audio,
   };
 }
 
@@ -397,6 +414,34 @@ function setHuman(r) {
   player = r;
   switchTimer = 0;
   applyNames();
+}
+
+// Звуки поля, которые зависят от состояния, а не от событий
+function updateSound(dt) {
+  audio.setListener(camera);
+  audio.updateRiders(match.riders);
+  for (const r of match.riders) {
+    // выкрик в начале рывка
+    r._shoutT = Math.max(0, (r._shoutT || 0) - dt);
+    if (r.sprinting && !r._wasSprint && r._shoutT === 0) {
+      audio.shout(r.pos.x, r.pos.z, 1);
+      r._shoutT = 2.5;
+    }
+    r._wasSprint = r.sprinting;
+  }
+  // трибуны тем громче, чем ближе улак к казану
+  const dK = Math.min(Math.abs(ulak.pos.x - KAZAN.x), Math.abs(ulak.pos.x + KAZAN.x));
+  const excitement = THREE.MathUtils.clamp(1 - (Math.hypot(dK, ulak.pos.z) - 6) / 34, 0, 1);
+  audio.updateCrowd(match.state === 'playing' ? excitement : 0, dt);
+  // бросок прошёл рядом с казаном, но гола нет — трибуны ахают
+  if (lastThrow) {
+    lastThrow.t += dt;
+    if (ulak.holder || ulak.resting || lastThrow.t > 3) {
+      const near = Math.hypot(dK, ulak.pos.z) < 8 && !ulak.inKazan;
+      if (near) audio.nearMiss();
+      lastThrow = null;
+    }
+  }
 }
 
 // Совет новичку: показывается один раз за сессию, пока сыграно мало матчей
@@ -618,8 +663,9 @@ function frame(now) {
       autoSwitch(dt);
       input.apply(player.controls, player, rig.screenRelative);
       match.update(dt);
-      audio.hooves(dt, Math.abs(player.speed));
+      updateSound(dt);
     }
+    if (!live || demo) audio.silenceRiders();
     if (!paused) {
       for (const r of match.riders) {
         r.render(dt);

@@ -16,6 +16,23 @@
 | `public/textures/sky_2k.hdr` | HDRI-небо «Kloofendal 48d Partly Cloudy (Pure Sky)» | https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky | CC0 |
 | `public/textures/grass_diff.jpg`, `grass_nor.jpg`, `grass_rough.jpg` | PBR-текстура травы «Sparse Grass» (цвет перекрашивается кодом) | https://polyhaven.com/a/sparse_grass | CC0 |
 
+## Звуки
+
+| Файл | Что это | Автор / источник | Лицензия |
+| --- | --- | --- | --- |
+| `public/sounds/Trot.ogg` | Рысь коня (петля, темп меняется кодом) | ezduzziteh, https://opengameart.org/content/horse-trotting | CC0 |
+| `public/sounds/cheers_1.ogg` | Ликование толпы | nocturnalvanguard, https://opengameart.org/content/cheers-0 | CC0 |
+| `public/sounds/oooooooooo.ogg` | Разочарованное «у-у-у» толпы | nocturnalvanguard, https://opengameart.org/content/oooooooooooooo | CC0 |
+| `public/sounds/crowd_shouting_0.ogg` | Гул толпы (фон трибун) | starninjas, https://opengameart.org/content/crowd-shoutingspeaking-ambience | CC0 |
+| `public/sounds/whoosh2_0.wav` | Свист броска | pyranostudios, https://opengameart.org/content/air-whoosh | CC0 |
+| `public/sounds/neigh.ogg` | Ржание коня | «Wiehern.ogg», Wikimedia Commons (Hü.) | Public domain |
+| `public/sounds/hurray.ogg` | «Ура!» | «Hurray.ogg», Wikimedia Commons | Public domain |
+| `public/sounds/applause.ogg` | Аплодисменты | «Applause ii.ogg», Wikimedia Commons | Public domain |
+| `public/sounds/boo.wav` | Недовольный гул зрителей | «Soundgoats - Audience Booing.wav», Wikimedia Commons | Public domain |
+| `public/sounds/whistle.wav` | Свисток судьи | «218318 splicesound referee-whistle-blow-gymnasium.wav», Wikimedia Commons (splicesound) | CC0 |
+
+Выкрики всадников, удары, подбор улака, отсчёт и музыка синтезируются кодом (`src/game/Audio.js`).
+
 Всё остальное — калпак, попона, улак, казаны, юрты, горы, трава,
 текстуры и орнаменты — сгенерировано кодом этого проекта (процедурная геометрия и canvas-текстуры).
 
