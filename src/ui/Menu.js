@@ -1,4 +1,5 @@
 import { settings, setSetting, getSetting, onSettings, COAT_SHOP, levelOf } from './settings.js';
+import { CREDITS, GAME_AUTHOR, GAME_YEAR } from '../data/credits.js';
 import { t, setLang, applyI18n, LANGS } from './i18n.js';
 import { ENCYCLOPEDIA } from './i18n_extra.js';
 import { COUNTRIES, flagCanvas, countryName } from '../data/countries.js';
@@ -106,6 +107,7 @@ export class Menu {
           </button>
           <span class="spacer"></span>
           <div class="lang">${LANGS.map((l) => `<button data-lang="${l}">${l.toUpperCase()}</button>`).join('')}</div>
+          <button class="icon-btn" data-go="credits" aria-label="credits">ⓘ</button>
           <button class="icon-btn" id="menu-full" aria-label="fullscreen">⛶</button>
           <button class="icon-btn" data-go="settings" aria-label="settings">⚙</button>
         </header>
@@ -216,6 +218,24 @@ export class Menu {
           <div class="result-reward" id="result-reward"></div>
           <button class="primary" id="again-btn" data-i18n="again"></button>
           <button class="secondary" id="result-exit-btn" data-i18n="toMenu"></button>
+        </div>
+      </section>
+
+      <section class="screen panel wide" data-screen="credits">
+        <header><button class="back" data-go="main">‹</button><h2 data-i18n="credits"></h2></header>
+        <div class="panel-body credits">
+          <div class="credit-author"><small data-i18n="creditsGame"></small><b>${GAME_AUTHOR}</b><span>© ${GAME_YEAR} ${GAME_AUTHOR}</span></div>
+          ${['models', 'music', 'textures', 'sounds', 'libs']
+            .map(
+              (k) => `<h3 data-i18n="credits_${k}"></h3><ul>${CREDITS[k]
+                .map(
+                  ([title, author, lic, url]) =>
+                    `<li><b>${url ? `<a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>` : title}</b> — ${author} <em>${lic}</em></li>`,
+                )
+                .join('')}</ul>${k === 'models' ? '<p class="note" data-i18n="creditsChanges"></p>' : ''}`,
+            )
+            .join('')}
+          <p class="note" data-i18n="creditsProc"></p>
         </div>
       </section>
 

@@ -2,6 +2,7 @@
   "name": "kok-boru",
   "private": true,
   "version": "0.1.0",
+  "author": "Dastan Erkinbekov",
   "type": "module",
   "scripts": {
     "dev": "vite",
