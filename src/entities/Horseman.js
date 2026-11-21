@@ -41,9 +41,14 @@ function makeNameTag(text, css) {
 }
 
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const UP = new THREE.Vector3(0, 1, 0);
+const _hand = new THREE.Vector3();
+const _bit = new THREE.Vector3();
+const _end = new THREE.Vector3();
+const _dir = new THREE.Vector3();
 
 export class Horseman {
-  constructor({ id, teamId, name, coat, isHuman = false }) {
+  constructor({ id, teamId, name, coat, isHuman = false, number = 0 }) {
     this.id = id;
     this.teamId = teamId;
     this.team = TEAMS[teamId];
@@ -88,8 +93,21 @@ export class Horseman {
     this.seat = new THREE.Group(); // следует за спиной коня
     this.tilt.add(this.seat);
     this.seat.add(createTack(this.team));
-    this.rider = new RiderFigure(this.team);
+    this.rider = new RiderFigure(this.team, number);
     this.seat.add(this.rider.group);
+
+    // повод: два ремня от левой руки к удилам
+    const reinMat = new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.7 });
+    const reinGeo = new THREE.CylinderGeometry(0.011, 0.011, 1, 5);
+    this.reins = [-1, 1].map((side) => {
+      const m = new THREE.Mesh(reinGeo, reinMat);
+      m.userData.side = side;
+      m.castShadow = true;
+      this.tilt.add(m);
+      return m;
+    });
+    this.bitBone = this.horse.bone('BN_BT_Lip_028_end') || this.horse.bone('BN_BT_Lip') || this.horse.bone('BN_Jaw');
+    this.reinHand = this.rider.bones.lHand;
     // точка, где висит улак (у правого стремени; правая сторона всадника — это −X)
     this.carryAnchor = new THREE.Object3D();
     this.carryAnchor.position.set(-0.6, -0.5, 0.05);
@@ -266,6 +284,24 @@ export class Horseman {
       accel: this.accelLong,
       jolt: this.jolt,
     });
+
+    // повод тянется от кисти к морде коня
+    if (this.bitBone && this.reinHand) {
+      this.reinHand.getWorldPosition(_hand);
+      this.bitBone.getWorldPosition(_bit);
+      this.tilt.worldToLocal(_hand);
+      this.tilt.worldToLocal(_bit);
+      for (const r of this.reins) {
+        _end.copy(_bit);
+        _end.x += r.userData.side * 0.09;
+        _end.y += 0.05;
+        _dir.subVectors(_end, _hand);
+        const len = _dir.length();
+        r.position.copy(_hand).addScaledVector(_dir, 0.5);
+        r.quaternion.setFromUnitVectors(UP, _dir.divideScalar(len || 1));
+        r.scale.set(1, len, 1);
+      }
+    }
   }
 
   // Параметры броска при заданной силе замаха (0..1)

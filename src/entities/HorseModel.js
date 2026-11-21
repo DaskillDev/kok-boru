@@ -93,7 +93,7 @@ const _b = new THREE.Vector3();
 export class HorseModel {
   constructor(coat = 'bay') {
     if (!proto) throw new Error('Horse asset is not loaded');
-    const model = cloneSkinned(proto.scene);
+    const model = (this.model = cloneSkinned(proto.scene));
     // обёртка: +Z — вперёд, начало координат — на земле под серединой корпуса
     this.mesh = new THREE.Group();
     const pivot = new THREE.Group();
@@ -156,6 +156,10 @@ export class HorseModel {
     // у каждого коня свой сдвиг фазы, чтобы не двигались синхронно
     const phase = Math.random();
     for (const a of Object.values(this.actions)) a.time = phase * a.getClip().duration;
+  }
+
+  bone(part) {
+    return findBone(this.model, part);
   }
 
   setCoat(coat) {

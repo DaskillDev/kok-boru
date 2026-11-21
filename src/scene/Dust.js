@@ -21,6 +21,7 @@ export class Dust {
     this.vel = new Float32Array(MAX * 3);
     this.life = new Float32Array(MAX);
     this.maxLife = new Float32Array(MAX);
+    this.bright = new Uint8Array(MAX); // цветные частицы (конфетти) ярче пыли
     for (let i = 0; i < MAX; i++) this.pos[i * 3 + 1] = -100;
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
@@ -60,6 +61,7 @@ export class Dust {
       this.vel[i * 3 + 1] = 0.5 + Math.random() * 0.9;
       this.vel[i * 3 + 2] = rider.vel.z * 0.12 + (Math.random() - 0.5) * 0.8;
       this.life[i] = this.maxLife[i] = 0.7 + Math.random() * 0.7;
+      this.bright[i] = 0;
       const shade = 0.5 + Math.random() * 0.15;
       this.col[i * 4] = shade * 1.05;
       this.col[i * 4 + 1] = shade * 0.95;
@@ -69,7 +71,7 @@ export class Dust {
   }
 
   // Облако пыли от удара
-  burst(x, z, count = 14, spread = 2.4) {
+  burst(x, z, count = 14, spread = 2.4, rgb = null, up = 1) {
     for (let k = 0; k < count; k++) {
       const i = this.next;
       this.next = (this.next + 1) % MAX;
@@ -79,13 +81,14 @@ export class Dust {
       this.pos[i * 3 + 1] = 0.3 + Math.random() * 0.9;
       this.pos[i * 3 + 2] = z + Math.sin(a) * 0.3;
       this.vel[i * 3] = Math.cos(a) * sp;
-      this.vel[i * 3 + 1] = 0.6 + Math.random() * 1.4;
+      this.vel[i * 3 + 1] = (0.6 + Math.random() * 1.4) * up;
       this.vel[i * 3 + 2] = Math.sin(a) * sp;
-      this.life[i] = this.maxLife[i] = 0.6 + Math.random() * 0.6;
+      this.life[i] = this.maxLife[i] = (0.6 + Math.random() * 0.6) * (rgb ? 2 : 1);
       const shade = 0.55 + Math.random() * 0.15;
-      this.col[i * 4] = shade * 1.05;
-      this.col[i * 4 + 1] = shade * 0.95;
-      this.col[i * 4 + 2] = shade * 0.72;
+      this.col[i * 4] = rgb ? rgb[0] * (0.7 + Math.random() * 0.6) : shade * 1.05;
+      this.col[i * 4 + 1] = rgb ? rgb[1] * (0.7 + Math.random() * 0.6) : shade * 0.95;
+      this.col[i * 4 + 2] = rgb ? rgb[2] * (0.7 + Math.random() * 0.6) : shade * 0.72;
+      this.bright[i] = rgb ? 1 : 0;
     }
   }
 
@@ -98,7 +101,7 @@ export class Dust {
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
       this.vel[i * 3 + 1] *= 1 - dt * 1.5;
       const t = Math.max(this.life[i] / this.maxLife[i], 0);
-      this.col[i * 4 + 3] = t * 0.3;
+      this.col[i * 4 + 3] = t * (this.bright[i] ? 0.85 : 0.3);
       if (this.life[i] <= 0) this.pos[i * 3 + 1] = -100;
     }
     this.points.geometry.attributes.position.needsUpdate = true;

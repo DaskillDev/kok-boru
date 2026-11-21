@@ -249,3 +249,10 @@ input[type='range'] { width: 46%; accent-color: var(--gold); }
 .coat.active { border-color: var(--gold); background: rgba(233,185,73,.14); }
 .coat.active small { color: var(--gold); }
 .result-reward { text-align: center; color: var(--gold); font-weight: 700; min-height: 20px; }
+
+/* стрелка на краю экрана: где улак, когда он не в кадре */
+#ulak-arrow {
+  position: absolute; left: 0; top: 0; width: 34px; height: 34px; margin: -17px 0 0 -17px; display: none;
+  place-items: center; font-size: 22px; color: #ffd23a; text-shadow: 0 0 6px #000, 0 2px 4px #000;
+}
+#ulak-arrow.on { display: grid; }

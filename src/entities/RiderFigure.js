@@ -188,6 +188,35 @@ function drapeGeometry(rx, ry, phiMax, z0, z1, phiMin = -phiMax, segs = 20, uRep
   return g;
 }
 
+const numberMats = new Map();
+// Номер игрока: белые цифры с тёмной обводкой на прозрачном фоне
+function numberMaterial(n) {
+  if (numberMats.has(n)) return numberMats.get(n);
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  ctx.font = '900 96px Segoe UI, Arial, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 10;
+  ctx.strokeStyle = 'rgba(10,14,22,0.9)';
+  ctx.strokeText(String(n), 64, 70);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(String(n), 64, 70);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshStandardMaterial({
+    map: t,
+    transparent: true,
+    roughness: 0.8,
+    polygonOffset: true,
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
+  });
+  numberMats.set(n, m);
+  return m;
+}
+
 const tackMats = new Map();
 // Попона в цветах команды (седло и уздечка — в самой модели коня)
 export function createTack(team) {
@@ -223,7 +252,7 @@ export function createTack(team) {
 }
 
 export class RiderFigure {
-  constructor(team) {
+  constructor(team, number = 0) {
     if (!proto) throw new Error('Rider asset is not loaded');
     const g = (this.group = new THREE.Group());
     const model = (this.model = cloneSkinned(proto.scene));
@@ -253,6 +282,7 @@ export class RiderFigure {
       rArm: b('RightArm'),
       rFore: b('RightForeArm'),
       rHand: b('RightHand'),
+      lHand: b('LeftHand'),
       lUpLeg: b('LeftUpLeg'),
       lLeg: b('LeftLeg'),
       lFoot: b('LeftFoot'),
@@ -278,6 +308,21 @@ export class RiderFigure {
     kalpak.rotation.x = -0.1;
     holder.add(kalpak);
 
+    // --- номер на спине: табличка на кости груди ---
+    if (number) {
+      const chest = this.bones.spine2;
+      const nh = new THREE.Group();
+      const cs = chest.getWorldScale(new THREE.Vector3());
+      nh.scale.set(1 / cs.x, 1 / cs.y, 1 / cs.z);
+      nh.quaternion.copy(chest.getWorldQuaternion(new THREE.Quaternion()).invert());
+      chest.add(nh);
+      const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), numberMaterial(number));
+      plate.position.set(0, 0.07, -0.118);
+      plate.rotation.y = Math.PI; // лицом назад
+      plate.rotation.x = 0.1;
+      nh.add(plate);
+    }
+
     // --- базовая сидячая поза из клипа ---
     this._applyClipPose(POSE_TIME);
 
@@ -292,6 +337,10 @@ export class RiderFigure {
     this._w(this.bones.rLeg, Z, 0.2);
     this._w(this.bones.lFoot, X, -0.25);
     this._w(this.bones.rFoot, X, -0.25);
+
+    // кисти сжаты в кулак: для каждого пальца подбираем ось сгиба по скелету
+    this._curlFingers('Left', 1.15);
+    this._curlFingers('Right', 0.95);
 
     this.base = new Map();
     for (const bn of Object.values(this.bones)) this.base.set(bn, bn.quaternion.clone());
@@ -308,6 +357,41 @@ export class RiderFigure {
     this._lean = 0;
     this._roll = 0;
     this.swing = 0; // таймер анимации броска
+  }
+
+  // Сгибает пальцы: пробуем повороты вокруг локальных осей и берём тот,
+  // который ближе всего подводит кончик пальца к запястью
+  _curlFingers(side, angle) {
+    const hand = bone(this.model, `${side}Hand`);
+    const origin = new THREE.Vector3();
+    const tipPos = new THREE.Vector3();
+    const axes = [X, Y, Z];
+    const q = new THREE.Quaternion();
+    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky']) {
+      let chain;
+      let tip;
+      try {
+        chain = [1, 2, 3].map((i) => bone(this.model, `${side}Hand${finger}${i}`));
+        tip = bone(this.model, `${side}Hand${finger}4`);
+      } catch {
+        continue;
+      }
+      const rest = chain.map((b) => b.quaternion.clone());
+      let best = null;
+      let bestD = Infinity;
+      for (const ax of axes) {
+        for (const sgn of [1, -1]) {
+          chain.forEach((b, i) => b.quaternion.copy(rest[i]).multiply(q.setFromAxisAngle(ax, sgn * angle)));
+          hand.updateWorldMatrix(true, true);
+          const d = tip.getWorldPosition(tipPos).distanceTo(hand.getWorldPosition(origin));
+          if (d < bestD) {
+            bestD = d;
+            best = [ax, sgn];
+          }
+        }
+      }
+      chain.forEach((b, i) => b.quaternion.copy(rest[i]).multiply(q.setFromAxisAngle(best[0], best[1] * angle)));
+    }
   }
 
   // Выставляет кости в позу клипа в момент t (без микшера)

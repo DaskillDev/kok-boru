@@ -77,6 +77,20 @@ const aim = new AimGuide(scene);
 const dust = new Dust(scene);
 const minimap = new Minimap(document.getElementById('minimap'));
 const ORIGIN = new THREE.Vector3();
+const ulakArrow = document.getElementById('ulak-arrow');
+const _proj = new THREE.Vector3();
+// кольцо под напарником, которому уйдёт пас
+const passRing = new THREE.Mesh(
+  new THREE.RingGeometry(1.05, 1.3, 40),
+  new THREE.MeshBasicMaterial({ color: 0x8cf0ff, transparent: true, opacity: 0.7, depthWrite: false }),
+);
+passRing.rotation.x = -Math.PI / 2;
+passRing.visible = false;
+scene.add(passRing);
+const NUMBERS = [7, 10, 5, 3];
+const tips = new Set(); // советы новичку, показанные в этой сессии
+let autoLevel = 'high'; // текущий уровень в режиме «Авто»
+let slowT = 0;
 
 // луч из точки экрана на плоскость поля — для режима управления «Касание»
 const raycaster = new THREE.Raycaster();
@@ -129,7 +143,7 @@ const playerName = () => settings.nickname || t('you');
 
 function applyQuality() {
   let q = settings.quality;
-  if (q === 'auto') q = touch ? 'low' : 'high';
+  if (q === 'auto') q = touch ? 'low' : autoLevel;
   postfx.enabled = q === 'high';
   if (env) env.sun.castShadow = q !== 'low';
   if (tufts) tufts.visible = q !== 'low';
@@ -141,6 +155,10 @@ function applyQuality() {
 
 function applyNames() {
   for (const r of riders) {
+    if (demo) {
+      r.tag.visible = false;
+      continue;
+    }
     const first = rig.mode === 'first' && r === player;
     r.tag.visible = !first && (settings.names === 'all' || (settings.names === 'humans' && r.isHuman));
   }
@@ -187,8 +205,15 @@ async function init() {
   const physics = new PhysicsWorld(kazanCollisionMesh());
   const slots = [0, 0];
   riders = ROSTER.map((r, id) => {
-    const h = new Horseman({ id, ...r, name: r.name || playerName(), coat: id === 0 ? settings.profile.coat : r.coat });
-    h.slot = slots[r.teamId]++;
+    const slot = slots[r.teamId]++;
+    const h = new Horseman({
+      id,
+      ...r,
+      name: r.name || playerName(),
+      coat: id === 0 ? settings.profile.coat : r.coat,
+      number: NUMBERS[slot],
+    });
+    h.slot = slot;
     scene.add(h.group);
     physics.addRider(h);
     return h;
@@ -211,6 +236,7 @@ async function init() {
         if (demo) return;
         hud.showBanner(t('go'), 0.9);
         audio.beep(true);
+        setTimeout(() => tip('tipStart', 3), 1100);
       },
       onOvertime: () => {
         hud.showBanner(`${t('overtime')}<small>${t('overtimeSub')}</small>`, 2.2, '#ffd34a');
@@ -218,6 +244,9 @@ async function init() {
       },
       onGoal: (team, scorer) => {
         arena.cheer();
+        // конфетти в цвет забившей команды над казаном
+        const c = new THREE.Color(team.color);
+        dust.burst(ulak.inKazan * KAZAN.x, 0, 46, 5, [c.r * 1.6 + 0.2, c.g * 1.6 + 0.2, c.b * 1.6 + 0.2], 3.2);
         if (demo) return;
         hud.setScore(match.score);
         const who = scorer ? (scorer === player ? t('youScored') : scorer.name) : '';
@@ -227,6 +256,7 @@ async function init() {
       },
       onPickup: (r) => {
         if (!demo && near(r)) audio.pickup();
+        if (!demo && r === player) tip('tipCarry', 3.2);
       },
       onThrow: (r) => {
         if (!demo && near(r)) audio.throwSound();
@@ -345,6 +375,50 @@ function setHuman(r) {
   applyNames();
 }
 
+// Совет новичку: показывается один раз за сессию, пока сыграно мало матчей
+function tip(key, duration) {
+  if (settings.stats.matches >= 3 || tips.has(key) || demo || !inMatch()) return;
+  tips.add(key);
+  hud.showBanner(`<small>${t(key)}</small>`, duration);
+}
+
+// Стрелка на краю экрана показывает, где улак, если он не в кадре
+function updateUlakArrow() {
+  const show = match.state === 'playing' && !demo && !rig.screenRelative && ulak.holder !== player;
+  if (show) {
+    _proj.copy(ulak.pos).project(camera);
+    const behind = _proj.z > 1;
+    if (behind || Math.abs(_proj.x) > 0.95 || Math.abs(_proj.y) > 0.92) {
+      let x = _proj.x;
+      let y = _proj.y;
+      if (behind) {
+        x = -x;
+        y = -y;
+      }
+      const a = Math.atan2(y, x);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const px = w / 2 + Math.cos(a) * (w / 2 - 34);
+      const py = h / 2 - Math.sin(a) * (h / 2 - 90);
+      ulakArrow.style.transform = `translate(${px}px, ${py}px) rotate(${Math.PI / 2 - a}rad)`;
+      ulakArrow.classList.add('on');
+      return;
+    }
+  }
+  ulakArrow.classList.remove('on');
+}
+
+// Режим «Авто»: если кадры идут медленно несколько секунд подряд — понижаем качество
+function adaptQuality(rawDt) {
+  if (settings.quality !== 'auto' || touch || document.hidden || rawDt > 0.25 || autoLevel === 'low') return;
+  slowT = rawDt > 1 / 27 ? slowT + rawDt : Math.max(0, slowT - rawDt * 2);
+  if (slowT > 4) {
+    slowT = 0;
+    autoLevel = autoLevel === 'high' ? 'medium' : 'low';
+    applyQuality();
+  }
+}
+
 // Показательный матч ботов на фоне меню
 function startDemo() {
   demo = true;
@@ -363,6 +437,7 @@ function startDemo() {
   match.goldenGoal = false;
   match.start();
   for (const r of riders) r.tag.visible = false;
+  ulakArrow.classList.remove('on');
   audio.ambience(false);
 }
 
@@ -504,8 +579,10 @@ let time = 0;
 
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const rawDt = (now - last) / 1000;
+  const dt = Math.min(rawDt, 0.05);
   last = now;
+  adaptQuality(rawDt);
   time += dt;
 
   if (match) {
@@ -526,6 +603,11 @@ function frame(now) {
       dust.update(dt);
     }
     aim.update(player);
+    updateUlakArrow();
+    // подсветка адресата паса
+    const mate = !demo && match.state === 'playing' && player.hasUlak ? match._passTarget(player) : null;
+    passRing.visible = !!mate;
+    if (mate) passRing.position.set(mate.pos.x, 0.07, mate.pos.z);
 
     if (demo) {
       // камера плавно облетает место, где идёт игра

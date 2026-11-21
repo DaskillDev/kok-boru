@@ -63,6 +63,27 @@ export class BotBrain {
 
   think(dt, match) {
     const me = this.rider;
+    // выбираемся из затора: если хотели ехать, но стоим — сдаём назад с поворотом
+    if (this.unstuckT > 0) {
+      this.unstuckT -= dt;
+      const c = me.controls;
+      c.throttle = -1;
+      c.steer = this.side;
+      c.sprint = c.action = c.pass = c.feint = false;
+      return;
+    }
+    this._decide(dt, match);
+    const wants = me.controls.throttle > 0.5 && !me.inTug && me.stagger <= 0;
+    this.stuckT = wants && Math.abs(me.speed) < 0.9 ? (this.stuckT || 0) + dt : 0;
+    if (this.stuckT > 1.6) {
+      this.stuckT = 0;
+      this.unstuckT = 0.9;
+      this.side = -this.side;
+    }
+  }
+
+  _decide(dt, match) {
+    const me = this.rider;
     const c = me.controls;
     const ulak = match.ulak;
     c.action = false;
