@@ -37,7 +37,10 @@ import { BotBrain } from './ai/BotBrain.js';
 import { Menu } from './ui/Menu.js';
 import { settings, setSetting, onSettings, isTouchDevice, levelOf } from './ui/settings.js';
 import { t, applyI18n } from './ui/i18n.js';
-import { applyStage, stageSize, lockLandscape } from './ui/viewport.js';
+import {
+  applyStage, stageSize, lockLandscape, exitFullscreen, canFullscreen, isFullscreen, isStandalone, isIOS,
+  onFullscreenChange, installTouchTaps,
+} from './ui/viewport.js';
 
 // До 4 всадников в команде; в матче участвуют первые N из каждой
 const ROSTER = [
@@ -76,6 +79,33 @@ const firstGesture = () => audio.unlock();
 window.addEventListener('pointerdown', firstGesture, { once: true });
 window.addEventListener('keydown', firstGesture, { once: true });
 document.body.classList.toggle('touch', touch);
+// Полный экран на телефоне: включается сам при первом касании и при старте матча.
+// Если игрок вышел из него сам — больше не навязываем, пока он не нажмёт кнопку ⛶ или не начнёт матч.
+let wantFull = touch && !isStandalone();
+document.body.classList.toggle('no-fullscreen', !canFullscreen() || isStandalone());
+document.body.classList.toggle('ios-browser', touch && isIOS() && !isStandalone());
+function syncFullButtons() {
+  for (const b of document.querySelectorAll('#btn-full, #menu-full')) b.classList.toggle('on', isFullscreen());
+}
+function toggleFullscreen() {
+  if (isFullscreen()) {
+    wantFull = false;
+    exitFullscreen();
+  } else {
+    wantFull = touch;
+    lockLandscape();
+  }
+}
+onFullscreenChange(() => {
+  if (!isFullscreen()) wantFull = false;
+  syncFullButtons();
+  window.dispatchEvent(new Event('resize'));
+});
+if (touch) {
+  installTouchTaps(() => {
+    if (wantFull && canFullscreen() && !isFullscreen()) lockLandscape();
+  });
+}
 applyI18n();
 
 const hud = new Hud();
@@ -552,11 +582,8 @@ async function init() {
     audio.unlock();
     hud.setMuted(audio.toggleMute());
   });
-  document.getElementById('btn-full').addEventListener('click', () => {
-    if (document.fullscreenElement) document.exitFullscreen?.();
-    else if (touch) lockLandscape();
-    else document.documentElement.requestFullscreen?.().catch(() => {});
-  });
+  document.getElementById('btn-full').addEventListener('click', toggleFullscreen);
+  document.getElementById('menu-full')?.addEventListener('click', toggleFullscreen);
 
   menu.setReady(true);
   // для отладки и будущих тестов
@@ -705,7 +732,10 @@ function startDemo() {
 
 function startMatch(cfg) {
   audio.unlock();
-  if (touch) lockLandscape();
+  if (touch && !isStandalone()) {
+    wantFull = true;
+    lockLandscape();
+  }
   demo = false;
   player = null;
   lastCfg = { ...cfg };

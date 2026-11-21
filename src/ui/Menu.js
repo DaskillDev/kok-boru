@@ -106,8 +106,10 @@ export class Menu {
           </button>
           <span class="spacer"></span>
           <div class="lang">${LANGS.map((l) => `<button data-lang="${l}">${l.toUpperCase()}</button>`).join('')}</div>
+          <button class="icon-btn" id="menu-full" aria-label="fullscreen">⛶</button>
           <button class="icon-btn" data-go="settings" aria-label="settings">⚙</button>
         </header>
+        <p class="ios-hint" data-i18n="iosHint"></p>
         <div class="hero">
           <h1 data-i18n="title"></h1>
           <div class="ornament"></div>

@@ -52,12 +52,99 @@ export function applyStage(touch) {
   return s;
 }
 
+// ---------- полный экран ----------
+const root = () => document.documentElement;
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+
+// Умеет ли браузер полноэкранный режим (iPhone не умеет: там игру ставят на экран «Домой»)
+export function canFullscreen() {
+  const el = root();
+  if (!(el.requestFullscreen || el.webkitRequestFullscreen)) return false;
+  return document.fullscreenEnabled ?? document.webkitFullscreenEnabled ?? true;
+}
+// Игра запущена как приложение с экрана «Домой» — там и так весь экран
+export function isStandalone() {
+  return navigator.standalone === true || matchMedia('(display-mode: fullscreen), (display-mode: standalone)').matches;
+}
+export const isFullscreen = () => !!fsElement();
+export const isIOS = () =>
+  /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
 // Полный экран + фиксация горизонтальной ориентации (работает не во всех браузерах)
 export async function lockLandscape() {
   try {
-    if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' });
+    if (!fsElement() && canFullscreen()) {
+      const el = root();
+      if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+      else await el.webkitRequestFullscreen();
+    }
+  } catch {
+    // запрос отклонён (нет жеста пользователя) — попробуем при следующем касании
+  }
+  try {
     await screen.orientation?.lock?.('landscape');
   } catch {
     // iOS и часть браузеров не умеют — тогда работает поворот сцены
   }
+}
+
+export function exitFullscreen() {
+  try {
+    screen.orientation?.unlock?.();
+    if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+    else document.webkitExitFullscreen?.();
+  } catch {
+    // нечего закрывать
+  }
+}
+
+export function onFullscreenChange(fn) {
+  document.addEventListener('fullscreenchange', fn);
+  document.addEventListener('webkitfullscreenchange', fn);
+}
+
+// ---------- касания по кнопкам ----------
+// Браузер не присылает click, если в этот момент другой палец лежит на экране (например, на джойстике):
+// пауза, ответы в дуэли и кнопки меню «не нажимались». Поэтому на сенсорном экране сами превращаем
+// короткое касание кнопки в click, а «родной» click от того же касания гасим, чтобы не сработало дважды.
+export function installTouchTaps(onAnyTap) {
+  const downs = new Map();
+  let synth = null;
+  const buttonOf = (el) => el?.closest?.('button') ?? null;
+  window.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.pointerType !== 'touch') return;
+      downs.set(e.pointerId, { b: buttonOf(e.target), x: e.clientX, y: e.clientY });
+    },
+    true,
+  );
+  window.addEventListener(
+    'pointerup',
+    (e) => {
+      const d = downs.get(e.pointerId);
+      downs.delete(e.pointerId);
+      if (!d) return;
+      onAnyTap?.();
+      if (!d.b || d.b.disabled || d.b.closest('#touch-buttons')) return;
+      if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
+      const over = document.elementFromPoint(e.clientX, e.clientY);
+      if (!over || !d.b.contains(over)) return;
+      synth = { b: d.b, t: performance.now() };
+      d.b.click();
+    },
+    true,
+  );
+  window.addEventListener('pointercancel', (e) => downs.delete(e.pointerId), true);
+  window.addEventListener(
+    'click',
+    (e) => {
+      if (!e.isTrusted || !synth) return;
+      if (performance.now() - synth.t < 700 && buttonOf(e.target) === synth.b) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
+    },
+    true,
+  );
 }

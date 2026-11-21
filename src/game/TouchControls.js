@@ -20,26 +20,19 @@ export class TouchControls {
     this.center = { x: 0, y: 0 };
     this._label = '';
 
-    const v = input.virtual;
-    for (const [id, key] of [['tb-sprint', 'sprint'], ['tb-action', 'action'], ['tb-pass', 'pass'], ['tb-feint', 'feint']]) {
-      const b = document.getElementById(id);
-      const set = (on) => (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        v[key] = on;
-        b.classList.toggle('down', on);
-        if (on) b.setPointerCapture?.(e.pointerId);
-      };
-      b.addEventListener('pointerdown', set(true));
-      b.addEventListener('pointerup', set(false));
-      b.addEventListener('pointercancel', set(false));
-      b.addEventListener('contextmenu', (e) => e.preventDefault());
-    }
+    // кнопки действий: какой палец какую кнопку держит
+    this.buttons = [['tb-sprint', 'sprint'], ['tb-action', 'action'], ['tb-pass', 'pass'], ['tb-feint', 'feint']].map(
+      ([id, key]) => ({ el: document.getElementById(id), key }),
+    );
+    this.held = new Map(); // pointerId → кнопка
 
     this.root.addEventListener('pointerdown', (e) => this._down(e));
-    this.root.addEventListener('pointermove', (e) => this._move(e));
-    this.root.addEventListener('pointerup', (e) => this._up(e));
-    this.root.addEventListener('pointercancel', (e) => this._up(e));
+    this.root.addEventListener('contextmenu', (e) => e.preventDefault());
+    // отпускание ловим на окне: палец может съехать с кнопки или со слоя управления
+    window.addEventListener('pointermove', (e) => this._move(e));
+    window.addEventListener('pointerup', (e) => this._up(e));
+    window.addEventListener('pointercancel', (e) => this._up(e));
+    window.addEventListener('blur', () => this.release());
     this.applySettings();
   }
 
@@ -69,7 +62,32 @@ export class TouchControls {
     v.sprint = v.action = v.pass = v.feint = false;
     v.target = null;
     this.stickId = this.targetId = null;
+    this.held.clear();
+    for (const b of this.buttons) b.el.classList.remove('down');
     this._resetStick();
+  }
+
+  // Кнопка под пальцем. Засчитываем и касание рядом с кнопкой: палец шире мыши и часто промахивается
+  _buttonAt(e) {
+    const direct = e.target.closest?.('#touch-buttons button');
+    if (direct) return this.buttons.find((b) => b.el === direct) ?? null;
+    let best = null;
+    let bestD = 18;
+    for (const b of this.buttons) {
+      const r = b.el.getBoundingClientRect();
+      const d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) - r.width / 2;
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
+  _setButton(b) {
+    const on = [...this.held.values()].includes(b);
+    this.input.virtual[b.key] = on;
+    b.el.classList.toggle('down', on);
   }
 
   _resetStick() {
@@ -82,7 +100,14 @@ export class TouchControls {
   }
 
   _down(e) {
-    if (e.target.closest('#touch-buttons')) return;
+    if (this.root.classList.contains('hidden')) return;
+    const btn = this._buttonAt(e);
+    if (btn) {
+      e.preventDefault();
+      this.held.set(e.pointerId, btn);
+      this._setButton(btn);
+      return;
+    }
     const p = toStage(e.clientX, e.clientY);
     if (settings.move === 'touch') {
       this.targetId = e.pointerId;
@@ -131,6 +156,12 @@ export class TouchControls {
 
   _up(e) {
     const v = this.input.virtual;
+    const btn = this.held.get(e.pointerId);
+    if (btn) {
+      this.held.delete(e.pointerId);
+      this._setButton(btn);
+      return;
+    }
     if (e.pointerId === this.targetId) {
       this.targetId = null;
       v.target = null;

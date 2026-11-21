@@ -293,6 +293,7 @@ export const EXTRA = {
     stamina: 'Stamina',
     throwPower: 'Throw power',
     btnSprint: 'Sprint',
+    iosHint: 'For full screen on iPhone: tap Share → Add to Home Screen, then open the game from the home screen',
     btnSteal: 'Steal',
     btnThrow: 'Throw',
     btnGrab: 'Grab',
