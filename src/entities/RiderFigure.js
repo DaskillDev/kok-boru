@@ -488,6 +488,11 @@ export class RiderFigure {
       ax = -0.6 - state.charge * 1.7; // замах: рука вверх-назад
       az = 0.2;
       fx = 0.3;
+    } else if ((state.reach || 0) > 0.05) {
+      // тянется к лежащему улаку: рука вниз и в сторону
+      ax = 0.5 + state.reach * 0.4;
+      az = 0.35 + state.reach * 0.55;
+      fx = 0.15;
     } else if (state.carrying) {
       ax = 0.75; // рука опущена к улаку у стремени
       az = 0.3;
@@ -508,7 +513,12 @@ export class RiderFigure {
     const jolt = state.jolt || 0;
     const lean = 0.1 + state.speed01 * 0.32 + inertia + jolt * 0.12;
     this._lean += (lean - this._lean) * (1 - Math.exp(-dt * 6));
-    this._roll += (-state.turn * 0.16 - this._roll) * (1 - Math.exp(-dt * 6));
+    this._reach = (this._reach || 0) + ((state.reach || 0) - (this._reach || 0)) * (1 - Math.exp(-dt * 7));
+    // свешивается с седла вправо и вперёд, как настоящие чабандесы при подборе туши
+    // наклон в сторону улака: +1 — вправо, −1 — влево
+    this._side = (this._side || 1) + ((state.reachSide || 1) - (this._side || 1)) * (1 - Math.exp(-dt * 5));
+    this._roll += (-state.turn * 0.16 + this._reach * 0.75 * this._side - this._roll) * (1 - Math.exp(-dt * 6));
+    this._lean += this._reach * 0.35 * (1 - Math.exp(-dt * 6));
 
     // сброс к базовой позе и наложение поворотов
     for (const [bn, q] of this.base) bn.quaternion.copy(q);

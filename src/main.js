@@ -17,6 +17,8 @@ import {
 import { loadAssets } from './scene/assets.js';
 import { createField, kazanCollisionMesh, createFieldGrass } from './scene/field.js';
 import { Dust } from './scene/Dust.js';
+import { Tracks } from './scene/Tracks.js';
+import { initClouds, cloudUniforms, applyCloudShadowsTo } from './scene/clouds.js';
 import { createArena } from './scene/arena.js';
 import { initPhysics, PhysicsWorld } from './physics/PhysicsWorld.js';
 import { loadHorseAsset } from './entities/HorseModel.js';
@@ -54,6 +56,8 @@ const DIFFICULTY = {
   expert: { skill: 1.0, speed: 1.04 },
 };
 const MAX_PER_TEAM = 10;
+// cloud — сколько теней от облаков в эту погоду
+const CLOUDS = { clear: 1, evening: 0.6, overcast: 0, fog: 0 };
 const MAPS = {
   sand: { pitch: 0xf6d9a6, steppe: 0xeed3a0, sand: true }, // по правилам поле покрыто промытым песком
   jailoo: { pitch: 0xffffff, steppe: 0xffffff },
@@ -88,6 +92,8 @@ const view3dEl = document.getElementById('view3d');
 let viewTarget = null; // объект, который показывается из энциклопедии
 const aim = new AimGuide(scene);
 const dust = new Dust(scene);
+const tracks = new Tracks(scene);
+initClouds();
 const minimap = new Minimap(document.getElementById('minimap'));
 const ORIGIN = new THREE.Vector3();
 const ulakArrow = document.getElementById('ulak-arrow');
@@ -237,6 +243,10 @@ function applyMap(id) {
   pm.normalScale.setScalar(m.sand ? 0.5 : 1.6);
   field.group.userData.overlay.visible = !m.sand; // на песке нет полос покоса
   mapIsSand = !!m.sand;
+  tracks.setSurface(mapIsSand);
+  tracks.clear();
+  // песок вязнет: конь медленнее разгоняется и чуть ниже предельная скорость
+  for (const r of riders) r.ground = m.sand ? { speed: 0.95, accel: 0.85 } : { speed: 1, accel: 1 };
   applyQuality();
   steppe.material.color.set(m.steppe);
 }
@@ -289,6 +299,7 @@ function applyBreeds() {
 
 // Создаёт недостающих всадников (составы до 10 на 10)
 function ensureRiders(size) {
+  const before = riders.length;
   for (const teamId of [0, 1]) {
     let have = riders.filter((r) => r.teamId === teamId).length;
     while (have < size) {
@@ -301,6 +312,7 @@ function ensureRiders(size) {
       brains.push(new BotBrain(h, 0.6));
     }
   }
+  for (const r of riders.slice(before)) applyCloudShadowsTo(r.group);
 }
 
 // Энциклопедия: облёт камеры вокруг объекта
@@ -503,6 +515,7 @@ async function init() {
     return true;
   };
 
+  applyCloudShadowsTo(scene);
   rig.orbitT = 0.6;
   rig.setMode(settings.camera);
   applyQuality();
@@ -712,6 +725,7 @@ function startMatch(cfg) {
   const weather = cfg.weather === 'random' ? WEATHER_IDS[Math.floor(Math.random() * WEATHER_IDS.length)] : cfg.weather;
   const mapIds = Object.keys(MAPS);
   applyWeather(scene, renderer, env, weather);
+  cloudUniforms.uCloudAmount.value = CLOUDS[weather] ?? 1;
   applyMap(cfg.map === 'random' ? mapIds[Math.floor(Math.random() * mapIds.length)] : cfg.map);
 
   setupRoster(cfg.size);
@@ -858,10 +872,19 @@ function frame(now) {
     }
     if (!live || demo) audio.silenceRiders();
     if (!paused) {
+      const loose = !ulak.holder && !ulak.inKazan && ulak.pos.y < 1.2;
       for (const r of match.riders) {
+        const d = loose ? Math.hypot(ulak.pos.x - r.pos.x, ulak.pos.z - r.pos.z) : 99;
+        r.reach = !r.hasUlak && d < 6 ? THREE.MathUtils.clamp(1 - (d - 1.5) / 4.5, 0, 1) : 0;
+        // с какой стороны лежит улак: «влево» в системе всадника — это +X (cos h, −sin h)
+        r.reachSide = (ulak.pos.x - r.pos.x) * Math.cos(r.heading) - (ulak.pos.z - r.pos.z) * Math.sin(r.heading) > 0 ? -1 : 1;
         r.render(dt);
-        if (live) dust.emit(dt, r);
+        if (live) {
+          dust.emit(dt, r);
+          tracks.track(r);
+        }
       }
+      tracks.update(dt);
       ulak.render(dt, time);
       dust.update(dt);
     }
@@ -916,6 +939,7 @@ function frame(now) {
   hud.update(dt);
   if (env) env.followShadow(rig.mode === 'tv' || rig.mode === 'top' ? rig.focus : player ? player.pos : ORIGIN);
   if (fieldGrass) fieldGrass.update(time);
+  cloudUniforms.uCloudTime.value = time;
   postfx.render(time);
 }
 

@@ -117,20 +117,13 @@ export function createSteppe(scene, assets) {
 
 // Кольцо предгорий и снежных гор на горизонте
 export function createMountains(scene) {
-  const segA = 320;
-  const segR = 46;
+  const segA = 640;
+  const segR = 96;
   const r0 = 190;
   const r1 = 1150;
   const pos = [];
-  const col = [];
+  const hts = [];
   const idx = [];
-  const cGrass = new THREE.Color(0x7c9050);
-  const cDry = new THREE.Color(0x9a8a5c);
-  const cRock = new THREE.Color(0x55524f);
-  const cRockDark = new THREE.Color(0x3b3a40);
-  const cSnow = new THREE.Color(0xb9c4d2);
-  const tmp = new THREE.Color();
-
   for (let j = 0; j <= segR; j++) {
     const t = j / segR;
     const r = r0 + (r1 - r0) * Math.pow(t, 1.25);
@@ -138,22 +131,16 @@ export function createMountains(scene) {
       const a = (i / segA) * Math.PI * 2;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      // шум периодичен по углу: берём координаты на окружности
       const hills = fbm2(x * 0.006 + 40, z * 0.006 + 40, 4, 3);
-      const ridge = ridged2(x * 0.0026 + 11, z * 0.0026 + 7, 5, 8);
+      const ridge = ridged2(x * 0.0026 + 11, z * 0.0026 + 7, 6, 8);
+      // мелкие складки и осыпи на склонах
+      const detail = ridged2(x * 0.018 + 3, z * 0.018 + 9, 3, 21) - 0.5;
       const sHills = THREE.MathUtils.smoothstep(r, r0, 380);
       const sMount = THREE.MathUtils.smoothstep(r, 400, 900);
       const fall = 1 - THREE.MathUtils.smoothstep(r, 1000, r1) * 0.5;
-      const h = sHills * hills * 34 + sMount * (ridge * 330 + hills * 60) * fall;
+      const h = sHills * hills * 34 + sMount * (ridge * 340 + hills * 60 + detail * 28 * ridge) * fall;
       pos.push(x, h - 1.5 * (1 - sHills) - 0.5, z);
-
-      const n = fbm2(x * 0.02, z * 0.02, 3, 5);
-      if (h < 45) tmp.copy(cGrass).lerp(cDry, THREE.MathUtils.clamp(h / 45 + n * 0.5 - 0.2, 0, 1));
-      else if (h < 150) tmp.copy(cDry).lerp(n > 0.5 ? cRock : cRockDark, THREE.MathUtils.clamp((h - 45) / 70, 0, 1));
-      else tmp.copy(n > 0.5 ? cRock : cRockDark);
-      const snow = THREE.MathUtils.smoothstep(h + n * 50, 165, 215);
-      tmp.lerp(cSnow, snow);
-      col.push(tmp.r, tmp.g, tmp.b);
+      hts.push(h);
     }
   }
   const row = segA + 1;
@@ -168,11 +155,47 @@ export function createMountains(scene) {
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.6, side: THREE.DoubleSide });
+
+  // цвет по высоте и крутизне: трава на пологих низинах, скалы на кручах,
+  // снег — наверху и только там, где склон не слишком крут (на отвесах снег не держится)
+  const nrm = geo.attributes.normal;
+  const col = new Float32Array(hts.length * 3);
+  const cGrass = new THREE.Color(0x6f8a45);
+  const cDry = new THREE.Color(0x9b8a5a);
+  const cRock = new THREE.Color(0x5e5a55);
+  const cRockDark = new THREE.Color(0x3a3a40);
+  const cSnow = new THREE.Color(0xe8eef6);
+  const tmp = new THREE.Color();
+  for (let i = 0; i < hts.length; i++) {
+    const h = hts[i];
+    const x = pos[i * 3];
+    const z = pos[i * 3 + 2];
+    const up = nrm.getY(i);
+    const steep = THREE.MathUtils.smoothstep(1 - up, 0.18, 0.5);
+    const n = fbm2(x * 0.03, z * 0.03, 3, 5);
+    if (h < 60) tmp.copy(cGrass).lerp(cDry, THREE.MathUtils.clamp(h / 60 + n * 0.5 - 0.25, 0, 1));
+    else tmp.copy(cDry).lerp(cGrass, (1 - steep) * 0.35 * (1 - THREE.MathUtils.smoothstep(h, 60, 140)));
+    tmp.lerp(n > 0.5 ? cRock : cRockDark, Math.max(steep, THREE.MathUtils.smoothstep(h, 90, 170)) * 0.9);
+    const snow = THREE.MathUtils.smoothstep(h + n * 60, 170, 225) * (1 - steep * 0.85);
+    tmp.lerp(cSnow, snow);
+    col[i * 3] = tmp.r;
+    col[i * 3 + 1] = tmp.g;
+    col[i * 3 + 2] = tmp.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const mat = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 0.95,
+    metalness: 0,
+    envMapIntensity: 0.55,
+    side: THREE.DoubleSide,
+    bumpMap: makeNoiseMap(256, 77, 60),
+    bumpScale: 2.5,
+  });
   const mesh = new THREE.Mesh(geo, mat);
+  mesh.receiveShadow = false;
   scene.add(mesh);
   return mesh;
 }

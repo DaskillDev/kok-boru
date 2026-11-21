@@ -96,6 +96,9 @@ export class Horseman {
     // порода коня и характеристики всадника (страна) — множители
     this.breed = { speed: 1, accel: 1, turn: 1, stamina: 1, mass: 1 };
     this.skills = { power: 1, accuracy: 1, grip: 1 };
+    // покрытие поля: песок вязнет сильнее травы
+    this.ground = { speed: 1, accel: 1 };
+    this.reach = 0; // 0..1 — насколько всадник тянется к лежащему улаку
     this.feintCooldown = 0;
 
     // --- улак ---
@@ -234,7 +237,7 @@ export class Horseman {
     }
 
     // разгон / торможение
-    let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor * this.breed.speed;
+    let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor * this.breed.speed * this.ground.speed;
     if (this.hasUlak) max *= HORSE.carrySpeedFactor;
     if (this.charging) max *= 0.85;
     if (this.inTug) max *= 0.85; // в борьбе за улак кони идут связкой
@@ -246,7 +249,7 @@ export class Horseman {
     // тяга падает с ростом скорости: с места конь берёт резво, к пределу — всё медленнее
     const pull = THREE.MathUtils.clamp(1.3 - Math.abs(this.speed) / max, 0.3, 1.3);
     if (target > this.speed)
-      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull * this.breed.accel;
+      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull * this.breed.accel * this.ground.accel;
     else rate = throttle < 0 && this.speed > 0 ? HORSE.brake : throttle === 0 ? HORSE.coast : HORSE.accel;
     const before = this.speed;
     const ds = target - this.speed;
@@ -291,6 +294,8 @@ export class Horseman {
     // скорость вдоль корпуса пересчитывается по новой скорости
     const along = this.vel.x * Math.sin(this.heading) + this.vel.z * Math.cos(this.heading);
     this.speed += (THREE.MathUtils.clamp(along, -HORSE.reverseSpeed, this.speed + 2.5) - this.speed) * 0.85;
+    // очень сильный удар — конь пугается и встаёт на дыбы
+    if (dv > 6.5 && this.horse) this.horse.rear();
     if (dv > 1.2) {
       this.stagger = Math.max(this.stagger, Math.min(0.3, (dv - 1.2) / 12));
       this.jolt = Math.min(1, this.jolt + dv / 5);
@@ -329,6 +334,8 @@ export class Horseman {
       turn: this.turn,
       accel: this.accelLong,
       jolt: this.jolt,
+      reach: this.reach,
+      reachSide: this.reachSide || 1,
     });
 
     // повод тянется от кисти к морде коня

@@ -92,6 +92,11 @@ export function createArena(scene) {
   const headGeo = new THREE.SphereGeometry(0.14, 8, 6);
   headGeo.translate(0, 1.02, 0);
   const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ roughness: 0.9 }), count);
+  // калпаки и тебетеи на головах части зрителей
+  const hatGeo = new THREE.ConeGeometry(0.13, 0.26, 10);
+  hatGeo.translate(0, 1.24, 0);
+  const hats = new THREE.InstancedMesh(hatGeo, new THREE.MeshStandardMaterial({ roughness: 0.95 }), count);
+  const hatOf = [];
   const heads = new THREE.InstancedMesh(headGeo, new THREE.MeshStandardMaterial({ roughness: 0.8 }), count);
   const rnd = mulberry32(2024);
   const base = [];
@@ -110,6 +115,11 @@ export function createArena(scene) {
       m.makeScale(s, s, s).setPosition(x, y, z);
       bodies.setMatrixAt(n, m);
       heads.setMatrixAt(n, m);
+      if (rnd() < 0.4) {
+        hatOf.push(n);
+        hats.setMatrixAt(hatOf.length - 1, m);
+        hats.setColorAt(hatOf.length - 1, col.set(rnd() < 0.75 ? 0xf2efe6 : 0x2a2420));
+      }
       // часть зрителей в цветах «своей» команды, остальные — пёстрая толпа
       if (rnd() < 0.45) col.copy(x * TEAMS[0].attackDir < 0 ? teamCols[0] : teamCols[1]).offsetHSL(0, 0, (rnd() - 0.5) * 0.15);
       else col.setHSL(rnd(), 0.35 + rnd() * 0.3, 0.3 + rnd() * 0.35);
@@ -120,10 +130,13 @@ export function createArena(scene) {
     }
   }
   bodies.count = heads.count = n;
+  hats.count = hatOf.length;
+  hats.instanceMatrix.needsUpdate = true;
+  if (hats.instanceColor) hats.instanceColor.needsUpdate = true;
   bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = true;
   bodies.instanceColor.needsUpdate = heads.instanceColor.needsUpdate = true;
   bodies.receiveShadow = heads.receiveShadow = true;
-  group.add(bodies, heads);
+  group.add(bodies, heads, hats);
   // прожекторные мачты по углам поля
   const mastMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.5, metalness: 0.6 });
   const lampMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3d0, emissiveIntensity: 2.2 });
@@ -212,8 +225,11 @@ export function createArena(scene) {
       m.makeScale(b.s, b.s, b.s).setPosition(b.x, b.y + jump, b.z);
       bodies.setMatrixAt(i, m);
       heads.setMatrixAt(i, m);
+      b.m = b.m || new THREE.Matrix4();
+      b.m.copy(m);
     }
-    bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = true;
+    hatOf.forEach((idx, k) => hats.setMatrixAt(k, base[idx].m));
+    bodies.instanceMatrix.needsUpdate = heads.instanceMatrix.needsUpdate = hats.instanceMatrix.needsUpdate = true;
   }
 
   return {
@@ -221,7 +237,7 @@ export function createArena(scene) {
     setSides,
     setScoreboard,
     setVisible(v) {
-      bodies.visible = heads.visible = v;
+      bodies.visible = heads.visible = hats.visible = v;
     },
     cheer(duration = 2.8) {
       cheerT = duration;

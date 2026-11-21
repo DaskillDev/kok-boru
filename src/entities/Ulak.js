@@ -28,6 +28,7 @@ function createUlakMesh() {
   stump.position.set(0, 0.1, 0.58);
   g.add(stump);
   // ноги
+  const legs = [];
   const legGeo = new THREE.CapsuleGeometry(0.042, 0.34, 4, 10);
   const hoofGeo = new THREE.SphereGeometry(0.048, 8, 6);
   for (const [x, z, rx] of [
@@ -39,6 +40,9 @@ function createUlakMesh() {
     const leg = new THREE.Group();
     leg.position.set(x, -0.1, z);
     leg.rotation.x = rx;
+    leg.userData.rest = rx;
+    leg.userData.phase = Math.random() * 6.28;
+    legs.push(leg);
     const l = new THREE.Mesh(legGeo, fur);
     l.position.y = -0.2;
     leg.add(l);
@@ -54,6 +58,7 @@ function createUlakMesh() {
   g.traverse((o) => {
     if (o.isMesh) o.castShadow = true;
   });
+  g.userData.legs = legs;
   return g;
 }
 
@@ -206,12 +211,26 @@ export class Ulak {
   render(dt, time) {
     const m = this.mesh;
     m.position.copy(this.pos);
+    const legs = m.userData.legs;
+    const t = (this._t = (this._t || 0) + dt);
     if (this.holder) {
-      // висит вдоль бока коня
-      m.rotation.set(0.2, this.holder.heading, -1.25);
+      // туша висит у стремени и раскачивается маятником в такт галопу и от рывков коня
+      const h = this.holder;
+      const sp = Math.hypot(h.vel.x, h.vel.z);
+      const drive = Math.sin(t * (4 + sp * 0.55)) * Math.min(sp / 10, 1) * 3 - (h.accelLong || 0) * 0.25;
+      this._swV = (this._swV || 0) + (drive - 14 * (this._sw || 0) - 2.2 * this._swV) * dt;
+      this._sw = (this._sw || 0) + this._swV * dt;
+      m.rotation.set(0.2 + this._sw * 0.6, h.heading, -1.25 + this._sw * 0.35);
       m.position.y -= 0.05;
+      for (const l of legs) l.rotation.x = l.userData.rest + Math.sin(t * 9 + l.userData.phase) * 0.25 * Math.min(sp / 8, 1) + this._sw * 0.8;
     } else {
       m.quaternion.copy(this.quat);
+      // в полёте ноги болтаются, на земле — безвольно лежат
+      const fly = this.resting ? 0 : Math.min(this.vel.length() / 8, 1);
+      for (const l of legs) {
+        const target = l.userData.rest + Math.sin(t * 14 + l.userData.phase) * 0.6 * fly + (this.resting ? 0.5 : 0);
+        l.rotation.x += (target - l.rotation.x) * Math.min(1, dt * 10);
+      }
     }
     const free = !this.holder;
     this.marker.visible = free && !this.inKazan;

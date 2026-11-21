@@ -30,6 +30,7 @@ export async function loadHorseAsset() {
     gallop: findClip(gltf.animations, '|Gallop'),
     gallopL: findClip(gltf.animations, '|Gallop_L'),
     gallopR: findClip(gltf.animations, '|Gallop_R'),
+    rear: findClip(gltf.animations, '|Buck_1'),
   };
 
   scene.traverse((o) => {
@@ -122,7 +123,8 @@ export class HorseModel {
       a.setEffectiveWeight(key === 'idle' ? 1 : 0);
       this.actions[key] = a;
     }
-    this.weights = { idle: 1, walk: 0, gallop: 0, gallopL: 0, gallopR: 0 };
+    this.weights = { idle: 1, walk: 0, gallop: 0, gallopL: 0, gallopR: 0, rear: 0 };
+    this.rearT = 0;
 
     // Точка посадки: верх седла в позе стойки, привязанный к кости спины
     this.spineBack = findBone(model, 'BN_Spine_01');
@@ -158,6 +160,13 @@ export class HorseModel {
     for (const a of Object.values(this.actions)) a.time = phase * a.getClip().duration;
   }
 
+  // Конь встаёт на дыбы (испуг после сильного удара)
+  rear() {
+    if (this.rearT > 0 || !this.actions.rear) return;
+    this.rearT = 1.6;
+    this.actions.rear.time = 0.2;
+  }
+
   bone(part) {
     return findBone(this.model, part);
   }
@@ -185,7 +194,11 @@ export class HorseModel {
     const wIdle = 1 - THREE.MathUtils.smoothstep(s, 0.15, 0.9);
     const wWalk = Math.max(0, 1 - wIdle - wGallopAll);
     const side = THREE.MathUtils.clamp(turn / 1.1, -1, 1) * wGallopAll;
+    // рывок на дыбы: перекрывает остальные движения на время клипа
+    this.rearT = Math.max(0, this.rearT - dt);
+    const wr = this.rearT > 0 ? Math.min(1, this.rearT * 3, (1.6 - this.rearT) * 4) : 0;
     const target = {
+      rear: wr,
       idle: wIdle,
       walk: wWalk,
       gallop: wGallopAll * (1 - Math.abs(side)),
@@ -194,6 +207,7 @@ export class HorseModel {
     };
     const k = 1 - Math.exp(-dt * 7);
     for (const key in target) {
+      if (key !== 'rear') target[key] *= 1 - wr;
       this.weights[key] += (target[key] - this.weights[key]) * k;
       this.actions[key].setEffectiveWeight(this.weights[key]);
     }
