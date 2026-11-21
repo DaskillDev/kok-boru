@@ -1,14 +1,16 @@
+import { ASSET_BASE } from '../assetBase.js';
 import * as THREE from 'three';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 
 // Загрузка внешних ассетов (CC0, Poly Haven — см. CREDITS.md):
 // HDRI-небо и фототекстуры травы.
 
-const base = import.meta.env.BASE_URL;
+const base = ASSET_BASE;
 
 function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous'; // картинка может идти с другого адреса, а мы читаем её пиксели
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = url;

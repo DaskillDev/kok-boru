@@ -1,3 +1,4 @@
+import { USING_CDN } from './assetBase.js';
 import * as THREE from 'three';
 import { TEAMS, FIELD, KAZAN, setTeamCountry } from './config.js';
 import { COUNTRIES, countryByCode, countryName, flagCanvas } from './data/countries.js';
@@ -1058,6 +1059,11 @@ requestAnimationFrame(frame);
 init().catch((e) => {
   releaseAudio();
   console.error(e);
+  // файлы шли через сеть доставки и что-то не загрузилось — один раз пробуем взять их с самого сайта
+  if (USING_CDN && !/[?&]nocdn/.test(location.search)) {
+    location.replace(location.pathname + '?nocdn');
+    return;
+  }
   menu.setReady(false);
 });
 

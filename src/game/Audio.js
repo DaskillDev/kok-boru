@@ -1,3 +1,4 @@
+import { ASSET_BASE } from '../assetBase.js';
 import { settings, onSettings } from '../ui/settings.js';
 
 // Звук игры.
@@ -108,7 +109,7 @@ export class GameAudio {
     // звуки (8 МБ) качаем только после того, как загрузилась сама игра — иначе они делят с ней
     // медленный интернет и кнопка «Быстрый матч» появляется позже
     if (this.holdUntil) await this.holdUntil;
-    const base = `${import.meta.env.BASE_URL}sounds/`;
+    const base = `${ASSET_BASE}sounds/`;
     await Promise.all(
       Object.entries(SAMPLES).map(async ([key, file]) => {
         try {

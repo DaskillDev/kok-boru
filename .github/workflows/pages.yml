@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -27,6 +27,24 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # GitHub Pages в некоторых странах отдаёт файлы очень медленно. Поэтому сборку кладём ещё и в ветку cdn:
+      # оттуда её раздаёт быстрая сеть jsDelivr по адресу с номером коммита (такой адрес кэшируется навсегда).
+      - name: Publish the build to the cdn branch
+        id: cdn
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist
+          git init -q -b cdn
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "build ${GITHUB_SHA}"
+          git push -q -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" cdn
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          rm -rf .git
+      - name: Load the game code and heavy files through the CDN
+        run: node scripts/cdn-index.mjs dist/index.html "https://cdn.jsdelivr.net/gh/${GITHUB_REPOSITORY}@${{ steps.cdn.outputs.sha }}/"
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

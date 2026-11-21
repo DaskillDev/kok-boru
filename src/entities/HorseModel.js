@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import { ASSET_BASE } from '../assetBase.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 // Конь: скелетная модель «Horse» (Henry S, CC-BY 4.0 — см. CREDITS.md).
@@ -24,7 +25,7 @@ const findBone = (root, part) => {
 
 export async function loadHorseAsset(onProgress) {
   // модель сжата (meshopt + WebP, только нужные анимации): 6 МБ вместо 19 — быстрее загрузка
-  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${import.meta.env.BASE_URL}models/horse_rigged.glb`, onProgress);
+  const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(`${ASSET_BASE}models/horse_rigged.glb`, onProgress);
   const scene = gltf.scene;
   const clips = {
     idle: findClip(gltf.animations, '1 Ilde'),
