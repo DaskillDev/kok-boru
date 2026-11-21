@@ -407,7 +407,14 @@ onSettings((key) => {
 // ---------- запуск ----------
 
 async function init() {
-  const [assets] = await Promise.all([loadAssets(), loadHorseAsset(), loadRiderAsset(), initPhysics()]);
+  // ход загрузки по самым тяжёлым файлам (вес — примерный размер в МБ)
+  const weight = { horse: 6.1, sky: 5.5, rider: 2.1 };
+  const done = { horse: 0, sky: 0, rider: 0 };
+  const part = (k) => (e) => {
+    done[k] = e.total ? e.loaded / e.total : Math.min(0.97, e.loaded / (weight[k] * 1048576));
+    menu.setProgress((done.horse * weight.horse + done.sky * weight.sky + done.rider * weight.rider) / 13.7);
+  };
+  const [assets] = await Promise.all([loadAssets(part('sky')), loadHorseAsset(part('horse')), loadRiderAsset(part('rider')), initPhysics()]);
 
   env = createEnvironment(scene, assets);
   steppe = createSteppe(scene, assets);

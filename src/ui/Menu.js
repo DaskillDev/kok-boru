@@ -443,7 +443,13 @@ export class Menu {
       .join('');
     const sub = this.el.querySelector('#quick-sub');
     sub.dataset.i18n = this.ready ? 'quickSub' : this.failed ? 'loadError' : 'loading';
-    sub.textContent = t(sub.dataset.i18n);
+    sub.textContent = t(sub.dataset.i18n) + (!this.ready && !this.failed && this.progress ? ` ${Math.round(this.progress * 100)}%` : '');
+  }
+
+  // Ход загрузки (0..1) — показывается на плитке «Быстрый матч»
+  setProgress(p) {
+    this.progress = Math.max(this.progress || 0, Math.min(1, p));
+    if (!this.ready) this._sync();
   }
 
   setReady(ok = true) {

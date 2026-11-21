@@ -30,8 +30,8 @@ function bone(root, name) {
   return hit;
 }
 
-export async function loadRiderAsset() {
-  const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/typing-japanese-man.glb`);
+export async function loadRiderAsset(onProgress) {
+  const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/typing-japanese-man.glb`, onProgress);
   let mesh = null;
   gltf.scene.traverse((o) => {
     if (o.isSkinnedMesh) mesh = o;
