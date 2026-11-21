@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { FIELD, KAZAN, GRAVITY, ULAK } from '../config.js';
+import { KAZAN, ULAK } from '../config.js';
 import { furTexture } from '../scene/textures.js';
 
-// Улак — туша козла. Свободный полёт с гравитацией, отскоки, попадание в казан.
+// Улак — туша козла. Полёт, кувыркание, отскоки и скатывание считает Rapier (PhysicsWorld).
 
 const UP = new THREE.Vector3(0, 1, 0);
 
@@ -57,9 +57,15 @@ function createUlakMesh() {
 }
 
 export class Ulak {
-  constructor(scene) {
+  constructor(scene, physics) {
+    this.physics = physics;
+    const { body, collider } = physics.createUlakBody();
+    this.body = body;
+    this.collider = collider;
+
     this.pos = new THREE.Vector3(0, ULAK.radius, 0);
     this.vel = new THREE.Vector3();
+    this.quat = new THREE.Quaternion();
     this.holder = null;
     this.lastHolder = null;
     this.lockedFor = null; // бросивший не может сразу подобрать снова
@@ -68,7 +74,6 @@ export class Ulak {
     this.inKazan = 0; // 0 или знак X казана, в котором лежит улак
 
     this.mesh = createUlakMesh();
-    this.spin = new THREE.Vector3();
     scene.add(this.mesh);
 
     // маркер на земле + стрелка сверху, чтобы улак было видно издалека
@@ -86,15 +91,27 @@ export class Ulak {
     scene.add(this.arrow);
   }
 
-  reset(x = 0, z = 0, y = 4) {
+  _teleport(x, y, z, yaw = 0) {
+    const b = this.body;
+    b.setEnabled(true);
+    b.setTranslation({ x, y, z }, true);
+    b.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true);
+    b.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    b.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.pos.set(x, y, z);
     this.vel.set(0, 0, 0);
+  }
+
+  reset(x = 0, z = 0, y = 4) {
+    if (this.holder) this.holder.hasUlak = false;
     this.holder = null;
     this.lastHolder = null;
     this.lockedFor = null;
+    this.lockTime = 0;
     this.resting = false;
     this.inKazan = 0;
-    this.mesh.rotation.set(0, Math.random() * 6, 0);
+    this._teleport(x, y, z, Math.random() * 6);
+    this.physics.setUlakHitsHorses(this.collider, true);
   }
 
   attach(rider) {
@@ -105,149 +122,60 @@ export class Ulak {
     this.resting = false;
     this.inKazan = 0;
     this.vel.set(0, 0, 0);
+    this.body.setEnabled(false); // пока улак в руках, физика его не считает
   }
 
   release(pos, vel, by) {
     if (this.holder) this.holder.hasUlak = false;
     this.holder = null;
-    this.pos.copy(pos);
+    this._teleport(pos.x, pos.y, pos.z, by ? by.heading : 0);
+    this.body.setLinvel({ x: vel.x, y: vel.y, z: vel.z }, true);
+    this.body.setAngvel(
+      { x: (Math.random() - 0.5) * 7, y: (Math.random() - 0.5) * 3, z: (Math.random() - 0.5) * 7 },
+      true,
+    );
     this.vel.copy(vel);
     this.lockedFor = by;
     this.lockTime = 0.7;
     this.resting = false;
-    this.spin.set((Math.random() - 0.5) * 8, (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 8);
+    this.physics.setUlakHitsHorses(this.collider, false);
   }
 
-  // Возвращает знак X казана, если на этом шаге улак упал в чашу, иначе 0
-  step(dt) {
-    this.lockTime = Math.max(0, this.lockTime - dt);
-    if (this.lockTime === 0) this.lockedFor = null;
+  // До шага физики: таймеры
+  preStep(dt) {
+    if (this.lockTime > 0) {
+      this.lockTime = Math.max(0, this.lockTime - dt);
+      if (this.lockTime === 0) {
+        this.lockedFor = null;
+        this.physics.setUlakHitsHorses(this.collider, true);
+      }
+    }
+  }
+
+  // После шага физики. Возвращает знак X казана, если улак только что упал в чашу, иначе 0
+  postStep() {
     if (this.holder) {
       this.holder.carryAnchor.getWorldPosition(this.pos);
       return 0;
     }
-    if (this.resting) return 0;
+    const t = this.body.translation();
+    const v = this.body.linvel();
+    const r = this.body.rotation();
+    this.pos.set(t.x, t.y, t.z);
+    this.vel.set(v.x, v.y, v.z);
+    this.quat.set(r.x, r.y, r.z, r.w);
+    this.resting = this.vel.lengthSq() < 0.04 && t.y < KAZAN.height;
 
-    const p = this.pos;
-    const v = this.vel;
-    const prevY = p.y;
-    const prevX = p.x;
-    const prevZ = p.z;
-    v.y -= GRAVITY * dt;
-    p.addScaledVector(v, dt);
-
-    let scored = 0;
-    // казаны
-    for (const s of [-1, 1]) {
-      const cx = s * KAZAN.x;
-      const dx = p.x - cx;
-      const dz = p.z;
-      const d = Math.hypot(dx, dz);
-      if (d > KAZAN.outerR + ULAK.radius) continue;
-      const pd = Math.hypot(prevX - cx, prevZ);
-      const rimY = KAZAN.height + ULAK.radius * 0.5;
-      const inside = d < KAZAN.innerR - 0.05;
-      if (inside) {
-        const wasInside = pd < KAZAN.innerR - 0.05;
-        if (this.inKazan !== s && p.y < rimY && (prevY >= rimY || wasInside) && v.y <= 0) {
+    if (!this.inKazan) {
+      for (const s of [-1, 1]) {
+        const d = Math.hypot(t.x - s * KAZAN.x, t.z);
+        if (d < KAZAN.innerR - 0.15 && t.y < KAZAN.height - 0.05) {
           this.inKazan = s;
-          scored = s;
-        }
-        if (this.inKazan === s) {
-          // внутри чаши: дно и стенки
-          const floorY = 0.27 + ULAK.radius;
-          if (p.y < floorY) {
-            p.y = floorY;
-            v.y = Math.abs(v.y) * 0.15;
-            v.x *= 0.5;
-            v.z *= 0.5;
-            if (Math.abs(v.y) < 0.5) {
-              v.set(0, 0, 0);
-              this.resting = true;
-            }
-          }
-          const lim = KAZAN.innerR - ULAK.radius - 0.1;
-          if (d > lim) {
-            const nx = dx / d;
-            const nz = dz / d;
-            p.x = cx + nx * lim;
-            p.z = nz * lim;
-            const vn = v.x * nx + v.z * nz;
-            if (vn > 0) {
-              v.x -= 1.5 * vn * nx;
-              v.z -= 1.5 * vn * nz;
-            }
-          }
-        } else if (p.y < rimY) {
-          // влетел сбоку сквозь стенку — выталкиваем
-          this._bounceOut(cx, dx, dz, d, s);
-        }
-      } else {
-        // над/на насыпи: высота поверхности падает от обода к земле
-        const t = THREE.MathUtils.clamp((d - KAZAN.innerR) / (KAZAN.outerR - KAZAN.innerR), 0, 1);
-        const surf = (t < 0.25 ? KAZAN.height : KAZAN.height * (1 - (t - 0.25) / 0.75)) + ULAK.radius;
-        if (p.y < surf) {
-          if (this.inKazan === s) {
-            // изнутри за стенку не вылетаем
-            const lim = KAZAN.innerR - ULAK.radius - 0.1;
-            p.x = cx + (dx / d) * lim;
-            p.z = (dz / d) * lim;
-          } else if (prevY >= surf - 0.15 || t < 0.3) {
-            // упал сверху на обод/склон — отскок и скатывание наружу
-            p.y = surf;
-            v.y = Math.abs(v.y) * 0.3;
-            const nx = dx / d;
-            const nz = dz / d;
-            v.x = v.x * 0.6 + nx * 2.2;
-            v.z = v.z * 0.6 + nz * 2.2;
-          } else {
-            this._bounceOut(cx, dx, dz, d, s);
-          }
+          return s;
         }
       }
     }
-
-    // земля
-    if (!this.inKazan && p.y < ULAK.radius) {
-      p.y = ULAK.radius;
-      if (v.y < -2.5) v.y = -v.y * 0.28;
-      else v.y = 0;
-      const f = Math.exp(-dt * 4.5);
-      v.x *= f;
-      v.z *= f;
-      this.spin.multiplyScalar(Math.exp(-dt * 6));
-      if (v.y === 0 && Math.hypot(v.x, v.z) < 0.25) {
-        v.set(0, 0, 0);
-        this.resting = true;
-      }
-    }
-
-    // границы площадки
-    const bx = FIELD.length / 2 + FIELD.margin - 0.5;
-    const bz = FIELD.width / 2 + FIELD.margin - 0.5;
-    if (Math.abs(p.x) > bx) {
-      p.x = Math.sign(p.x) * bx;
-      v.x *= -0.4;
-    }
-    if (Math.abs(p.z) > bz) {
-      p.z = Math.sign(p.z) * bz;
-      v.z *= -0.4;
-    }
-    return scored;
-  }
-
-  _bounceOut(cx, dx, dz, d, s) {
-    const nx = dx / (d || 1);
-    const nz = dz / (d || 1);
-    const r = KAZAN.outerR + ULAK.radius;
-    this.pos.x = cx + nx * r;
-    this.pos.z = nz * r;
-    const vn = this.vel.x * nx + this.vel.z * nz;
-    if (vn < 0) {
-      this.vel.x -= 1.4 * vn * nx;
-      this.vel.z -= 1.4 * vn * nz;
-    }
-    this.vel.multiplyScalar(0.7);
+    return 0;
   }
 
   render(dt, time) {
@@ -257,13 +185,8 @@ export class Ulak {
       // висит вдоль бока коня
       m.rotation.set(0.2, this.holder.heading, 1.25);
       m.position.y -= 0.05;
-    } else if (!this.resting) {
-      m.rotation.x += this.spin.x * dt;
-      m.rotation.z += this.spin.z * dt;
     } else {
-      m.rotation.x *= 0.8;
-      m.rotation.z = THREE.MathUtils.lerp(m.rotation.z, Math.PI / 2, 0.2);
-      m.position.y -= 0.08;
+      m.quaternion.copy(this.quat);
     }
     const free = !this.holder;
     this.marker.visible = free && !this.inKazan;
@@ -277,5 +200,3 @@ export class Ulak {
     }
   }
 }
-
-export { UP };

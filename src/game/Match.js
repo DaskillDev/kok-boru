@@ -5,7 +5,8 @@ import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS } from '../config.js';
 // поэтому позже тот же код можно крутить на сервере.
 
 export class Match {
-  constructor({ riders, ulak, brains, events }) {
+  constructor({ riders, ulak, brains, events, physics }) {
+    this.physics = physics;
     this.riders = riders;
     this.ulak = ulak;
     this.brains = brains; // BotBrain[] для ботов
@@ -84,7 +85,10 @@ export class Match {
     if (this.state === 'playing') this._ulakRules(dt);
     for (const r of this.riders) r.prevAction = r.controls.action;
 
-    const scoredAt = this.ulak.step(dt);
+    this.physics.syncRiders();
+    this.ulak.preStep(dt);
+    this.physics.step(dt);
+    const scoredAt = this.ulak.postStep();
     if (scoredAt && this.state === 'playing') {
       // казан на стороне s атакует команда с attackDir === s
       const team = TEAMS.find((t) => t.attackDir === scoredAt);
@@ -122,9 +126,12 @@ export class Match {
           a.vel.z += nz * k;
           b.vel.x -= nx * k;
           b.vel.z -= nz * k;
-          const slow = Math.exp(-dt * 2.5);
+          // удар гасит скорость тем сильнее, чем выше скорость сближения
+          const hit = Math.min(-rel / 30, 0.45);
+          const slow = Math.exp(-dt * 2.5) * (rel < -3 ? 1 - hit : 1);
           a.speed *= slow;
           b.speed *= slow;
+          if (rel < -3) this.events.onImpact?.(a, b, -rel);
         }
       }
     }
@@ -196,7 +203,7 @@ export class Match {
           r.stealImmunity = 0.9;
           this.events.onPickup?.(r);
         }
-      } else if (ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.6) {
+      } else if (ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.9) {
         const holder = ulak.holder;
         r.grabCooldown = r.isHuman ? 0.6 : 1.0;
         if (holder.stealImmunity > 0) continue;

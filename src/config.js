@@ -51,13 +51,14 @@ export const HORSE = {
   reverseSpeed: 3,
   accel: 6.5,
   sprintAccel: 10,
-  brake: 14,
+  brake: 10,
   coast: 3.5,
-  turnRateSlow: 2.4,
-  turnRateFast: 1.35,
+  turnRateSlow: 2.3, // рад/с на месте
+  lateralAccel: 15, // м/с² — предел бокового ускорения: чем быстрее, тем шире дуга
+  turnDrag: 0.1, // потеря скорости в крутом повороте
   grip: 4.5, // насколько быстро скорость «догоняет» направление (инерция/занос)
   radius: 1.15, // радиус столкновений
-  carrySpeedFactor: 0.84,
+  carrySpeedFactor: 0.8,
 };
 
 export const STAMINA = {
@@ -69,6 +70,7 @@ export const STAMINA = {
 
 export const ULAK = {
   radius: 0.3,
+  mass: 30, // кг — настоящая туша весит 30–35 кг
   pickupDist: 3.0,
   pickupMaxY: 2.3,
   stealDist: 2.7,

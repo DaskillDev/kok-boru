@@ -112,15 +112,22 @@ export class Horseman {
     let target = 0;
     if (c.throttle > 0) target = c.throttle * max;
     else if (c.throttle < 0) target = -HORSE.reverseSpeed;
+    if (this.exhausted) max *= 0.88; // загнанный конь идёт тяжелее
     let rate;
-    if (target > this.speed) rate = this.speed < 0 ? HORSE.brake : this.sprinting ? HORSE.sprintAccel : HORSE.accel;
+    // тяга падает с ростом скорости: с места конь берёт резво, к пределу — всё медленнее
+    const pull = THREE.MathUtils.clamp(1.3 - Math.abs(this.speed) / max, 0.3, 1.3);
+    if (target > this.speed)
+      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull;
     else rate = c.throttle < 0 && this.speed > 0 ? HORSE.brake : c.throttle === 0 ? HORSE.coast : HORSE.accel;
     const ds = target - this.speed;
     this.speed += Math.sign(ds) * Math.min(Math.abs(ds), rate * dt);
 
     // поворот: на скорости конь поворачивает шире
-    const k = THREE.MathUtils.clamp(Math.abs(this.speed) / HORSE.sprintSpeed, 0, 1);
-    const turnRate = THREE.MathUtils.lerp(HORSE.turnRateSlow, HORSE.turnRateFast, k);
+    // предел бокового ускорения: ω ≤ a / v
+    const v = Math.abs(this.speed);
+    const turnRate = Math.min(HORSE.turnRateSlow, HORSE.lateralAccel / Math.max(v, 1));
+    // крутой поворот на скорости «съедает» ход
+    this.speed -= Math.sign(this.speed) * Math.abs(this.turn) * v * HORSE.turnDrag * dt;
     const targetTurn = c.steer * turnRate * (this.speed < -0.2 ? -1 : 1);
     this.turn += (targetTurn - this.turn) * (1 - Math.exp(-dt * 7));
     this.heading = wrapPi(this.heading + this.turn * dt);

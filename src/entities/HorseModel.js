@@ -9,6 +9,74 @@ const REST_PHASE = 0.7; // фаза цикла, в которой конь «з�
 
 let proto = null;
 
+// Сглаженные нормали для базовой позы и каждого морф-таргета: исходная модель
+// без нормалей и рисуется гранёной; со сглаживанием корпус выглядит округлым.
+function smoothNormals(geo) {
+  const pos = geo.attributes.position;
+  const n = pos.count;
+  const idx = geo.index ? geo.index.array : null;
+  const tris = (idx ? idx.length : n) / 3;
+  const key = new Int32Array(n);
+  const ids = new Map();
+  for (let i = 0; i < n; i++) {
+    const k = `${pos.getX(i).toFixed(1)},${pos.getY(i).toFixed(1)},${pos.getZ(i).toFixed(1)}`;
+    let id = ids.get(k);
+    if (id === undefined) {
+      id = ids.size;
+      ids.set(k, id);
+    }
+    key[i] = id;
+  }
+  const compute = (P) => {
+    const acc = new Float32Array(ids.size * 3);
+    for (let t = 0; t < tris; t++) {
+      const a = idx ? idx[t * 3] : t * 3;
+      const b = idx ? idx[t * 3 + 1] : t * 3 + 1;
+      const c = idx ? idx[t * 3 + 2] : t * 3 + 2;
+      const ux = P[b * 3] - P[a * 3];
+      const uy = P[b * 3 + 1] - P[a * 3 + 1];
+      const uz = P[b * 3 + 2] - P[a * 3 + 2];
+      const vx = P[c * 3] - P[a * 3];
+      const vy = P[c * 3 + 1] - P[a * 3 + 1];
+      const vz = P[c * 3 + 2] - P[a * 3 + 2];
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      for (const v of [a, b, c]) {
+        acc[key[v] * 3] += nx;
+        acc[key[v] * 3 + 1] += ny;
+        acc[key[v] * 3 + 2] += nz;
+      }
+    }
+    const out = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const x = acc[key[i] * 3];
+      const y = acc[key[i] * 3 + 1];
+      const z = acc[key[i] * 3 + 2];
+      const l = Math.hypot(x, y, z) || 1;
+      out[i * 3] = x / l;
+      out[i * 3 + 1] = y / l;
+      out[i * 3 + 2] = z / l;
+    }
+    return out;
+  };
+  const baseP = pos.array;
+  const baseN = compute(baseP);
+  geo.setAttribute('normal', new THREE.BufferAttribute(baseN, 3));
+  const morphs = geo.morphAttributes.position;
+  if (morphs) {
+    const rel = geo.morphTargetsRelative;
+    geo.morphAttributes.normal = morphs.map((m) => {
+      const P = new Float32Array(n * 3);
+      for (let i = 0; i < n * 3; i++) P[i] = rel ? baseP[i] + m.array[i] : m.array[i];
+      const N = compute(P);
+      if (rel) for (let i = 0; i < n * 3; i++) N[i] -= baseN[i];
+      return new THREE.BufferAttribute(N, 3);
+    });
+  }
+}
+
+
 export async function loadHorseAsset() {
   const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}models/Horse.glb`);
   let mesh = null;
@@ -16,6 +84,9 @@ export async function loadHorseAsset() {
     if (o.isMesh && !mesh) mesh = o;
   });
   const clip = gltf.animations[0];
+  smoothNormals(mesh.geometry);
+  mesh.material.flatShading = false;
+  mesh.material.needsUpdate = true;
   const pos = mesh.geometry.attributes.position;
 
   // Опорные вершины спины (под седлом): по ним всадник следует за движением корпуса

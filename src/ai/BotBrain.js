@@ -42,7 +42,7 @@ export class BotBrain {
 
   _newAttempt() {
     this.throwDist = 7 + Math.random() * 6;
-    this.aimError = (Math.random() - 0.5) * 2 * lerp(0.34, 0.1, this.skill);
+    this.aimError = (Math.random() - 0.5) * 2 * lerp(0.5, 0.2, this.skill);
   }
 
   idle() {
@@ -114,9 +114,9 @@ export class BotBrain {
     const myD = dist(me.pos, holder.pos);
     const mateCloser = mates.some((m) => dist(m.pos, holder.pos) < myD - 2);
     if (!mateCloser || myD < 9) {
-      const lead = clamp(myD / 16, 0.05, 0.7);
+      const lead = clamp(myD / 11, 0.1, 1.2);
       this._drive(holder.pos.x + holder.vel.x * lead, holder.pos.z + holder.vel.z * lead, {
-        sprint: me.stamina > lerp(0.5, 0.2, this.skill) && myD < 20,
+        sprint: me.stamina > lerp(0.3, 0.12, this.skill) && myD < 30,
       });
     } else {
       const ox = ownKazanX(me.teamId);
@@ -138,7 +138,7 @@ export class BotBrain {
     const nearestFoe = Math.min(...foes.map((f) => dist(f.pos, me.pos)));
 
     // бросаем раньше, если вот-вот отберут
-    const pressured = nearestFoe < 4.5 && d < 24;
+    const pressured = nearestFoe < 3.4 && d < 22;
     const inZone = d < this.throwDist || pressured;
 
     c.steer = clamp(err * 3, -1, 1);

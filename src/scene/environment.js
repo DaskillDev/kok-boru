@@ -1,10 +1,11 @@
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { fbm2, ridged2, mulberry32 } from './noise.js';
-import { makeGrassMap, makeNoiseMap, yurtWallTexture } from './textures.js';
-
-const SUN_ELEVATION = 38; // градусы
-const SUN_AZIMUTH = 215;
+import { makeNoiseMap, yurtWallTexture } from './textures.js';
 
 export function createRenderer(container) {
   const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -12,78 +13,77 @@ export function createRenderer(container) {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.62;
+  renderer.toneMappingExposure = 0.64;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
   container.appendChild(renderer.domElement);
   return renderer;
 }
 
-// Небо, солнце, туман, окружение для PBR-отражений
-export function createEnvironment(scene, renderer) {
-  const sunDir = new THREE.Vector3().setFromSphericalCoords(
-    1,
-    THREE.MathUtils.degToRad(90 - SUN_ELEVATION),
-    THREE.MathUtils.degToRad(SUN_AZIMUTH),
-  );
+// Постобработка: затенение в складках (GTAO), лёгкое свечение, тональная компрессия.
+// Клавиша G переключает на прямой рендер для слабых видеокарт.
+export function createPostFX(renderer, scene, camera) {
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+  const composer = new EffectComposer(renderer, target);
+  composer.addPass(new RenderPass(scene, camera));
+  const gtao = new GTAOPass(scene, camera, size.x, size.y);
+  gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 });
+  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+  gtao.blendIntensity = 0.85;
+  composer.addPass(gtao);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.7, 6.0);
+  composer.addPass(bloom);
+  composer.addPass(new OutputPass());
+  return {
+    composer,
+    enabled: true,
+    render() {
+      if (this.enabled) composer.render();
+      else renderer.render(scene, camera);
+    },
+    resize(w, h) {
+      composer.setSize(w, h);
+    },
+  };
+}
 
-  const sky = new Sky();
-  sky.scale.setScalar(9000);
-  const u = sky.material.uniforms;
-  u.turbidity.value = 4;
-  u.rayleigh.value = 1.4;
-  u.mieCoefficient.value = 0.004;
-  u.mieDirectionalG.value = 0.82;
-  u.sunPosition.value.copy(sunDir);
-  if (u.cloudCoverage) {
-    u.cloudCoverage.value = 0.45;
-    u.cloudDensity.value = 0.45;
-    u.cloudElevation.value = 0.55;
-  }
-  scene.add(sky);
+// HDRI-небо как фон и источник отражений, солнце по положению на HDRI, туман в цвет горизонта
+export function createEnvironment(scene, assets) {
+  const { sky, skyInfo } = assets;
+  scene.background = sky;
+  scene.environment = sky;
+  scene.environmentIntensity = 0.9;
+  scene.backgroundIntensity = 1;
 
-  // Карта окружения из того же неба
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  const envSky = new Sky();
-  envSky.scale.setScalar(9000);
-  envSky.material.uniforms.sunPosition.value.copy(sunDir);
-  envSky.material.uniforms.turbidity.value = 4;
-  envSky.material.uniforms.rayleigh.value = 1.4;
-  envScene.add(envSky);
-  scene.environment = pmrem.fromScene(envScene, 0, 1, 10000).texture;
-  scene.environmentIntensity = 0.55;
-  pmrem.dispose();
+  const sunDir = skyInfo.sunDir.clone();
+  scene.fog = new THREE.FogExp2(skyInfo.horizon.clone().multiplyScalar(0.82), 0.00095);
 
-  scene.fog = new THREE.FogExp2(0xb9d0e6, 0.0012);
-
-  const hemi = new THREE.HemisphereLight(0xcfe2ff, 0x6a5a38, 0.55);
-  scene.add(hemi);
-
-  const sun = new THREE.DirectionalLight(0xfff0d8, 3.0);
-  sun.position.copy(sunDir).multiplyScalar(160);
+  const sun = new THREE.DirectionalLight(0xfff2de, 3.6);
+  sun.position.copy(sunDir).multiplyScalar(170);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   const sc = sun.shadow.camera;
-  sc.left = -78;
-  sc.right = 78;
-  sc.top = 60;
-  sc.bottom = -60;
+  sc.left = -88;
+  sc.right = 88;
+  sc.top = 88;
+  sc.bottom = -88;
   sc.near = 20;
-  sc.far = 330;
-  sun.shadow.bias = -0.0005;
-  sun.shadow.normalBias = 0.04;
-  sun.shadow.radius = 2.5;
+  sc.far = 360;
+  sun.shadow.bias = -0.0004;
+  sun.shadow.normalBias = 0.05;
+  sun.shadow.radius = 3;
   scene.add(sun);
   scene.add(sun.target);
 
-  return { sky, sun, sunDir };
+  return { sun, sunDir };
 }
 
 // Бескрайняя степь вокруг поля
-export function createSteppe(scene) {
-  const map = makeGrassMap({ base: [112, 132, 62], variance: 40, seed: 21 }, 260);
-  const mat = new THREE.MeshStandardMaterial({ map, roughness: 1, metalness: 0 });
+export function createSteppe(scene, assets) {
+  const maps = assets.grass([100, 124, 58], 0.32, 420);
+  const mat = new THREE.MeshStandardMaterial({ ...maps, roughness: 1, metalness: 0 });
+  mat.normalScale.set(1.3, 1.3);
   const ground = new THREE.Mesh(new THREE.CircleGeometry(1300, 64), mat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = -0.02;
@@ -103,9 +103,9 @@ export function createMountains(scene) {
   const idx = [];
   const cGrass = new THREE.Color(0x7c9050);
   const cDry = new THREE.Color(0x9a8a5c);
-  const cRock = new THREE.Color(0x6f6a66);
-  const cRockDark = new THREE.Color(0x4f4c50);
-  const cSnow = new THREE.Color(0xf6f8fc);
+  const cRock = new THREE.Color(0x55524f);
+  const cRockDark = new THREE.Color(0x3b3a40);
+  const cSnow = new THREE.Color(0xb9c4d2);
   const tmp = new THREE.Color();
 
   for (let j = 0; j <= segR; j++) {
@@ -148,7 +148,7 @@ export function createMountains(scene) {
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0, envMapIntensity: 0.6, side: THREE.DoubleSide });
   const mesh = new THREE.Mesh(geo, mat);
   scene.add(mesh);
   return mesh;

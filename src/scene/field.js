@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { FIELD, KAZAN, TEAMS } from '../config.js';
-import { grassTexture, makeNoiseMap } from './textures.js';
+import { makeNoiseMap } from './textures.js';
+import { fbm2 } from './noise.js';
 
 const LINE_Y = 0.03;
 
@@ -32,31 +33,62 @@ function addRing(group, mat, x, z, r, thick = 0.22, a0 = 0, a1 = Math.PI * 2) {
   group.add(m);
 }
 
-// Поле: скошенная трава полосами + разметка
-function createPitch(group) {
+// Поле: фототекстура травы + слой с полосами покоса и крупными пятнами, чтобы не было видно тайлинга
+function createPitch(group, assets) {
   const L = FIELD.length + 16;
   const W = FIELD.width + 16;
-  // текстура с полосами покоса: рисуем траву и затемняем каждую вторую полосу
-  const src = grassTexture({ base: [78, 132, 50], variance: 30, seed: 4 });
-  const c = document.createElement('canvas');
-  c.width = 1024;
-  c.height = 1024;
-  const ctx = c.getContext('2d');
-  ctx.drawImage(src, 0, 0, 1024, 1024);
-  ctx.fillStyle = 'rgba(0,30,0,0.13)';
-  ctx.fillRect(0, 0, 512, 1024);
-  const map = new THREE.CanvasTexture(c);
-  map.colorSpace = THREE.SRGBColorSpace;
-  map.wrapS = map.wrapT = THREE.RepeatWrapping;
-  map.repeat.set(L / 16, W / 16);
-  map.anisotropy = 16;
-  const bump = makeNoiseMap(256, 12, 1);
-  bump.repeat.set(L / 4, W / 4);
-  const mat = new THREE.MeshStandardMaterial({ map, bumpMap: bump, bumpScale: 0.6, roughness: 0.95, metalness: 0 });
+  const maps = assets.grass([74, 124, 46], 0.28, L / 5, W / 5);
+  const mat = new THREE.MeshStandardMaterial({ ...maps, roughness: 1, metalness: 0 });
+  mat.normalScale.set(1.6, 1.6);
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(L, W), mat);
   pitch.rotation.x = -Math.PI / 2;
   pitch.receiveShadow = true;
   group.add(pitch);
+
+  const c = document.createElement('canvas');
+  c.width = 1024;
+  c.height = 512;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(c.width, c.height);
+  const stripes = 16;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      const n = fbm2(x / 90, y / 90, 4, 7) - 0.5;
+      const stripe = Math.floor((x / c.width) * stripes) % 2 === 0 ? 1 : 0;
+      const dark = stripe * 0.16 + n * 0.5;
+      const i = (y * c.width + x) * 4;
+      if (dark > 0) {
+        img.data[i] = 0;
+        img.data[i + 1] = 22;
+        img.data[i + 2] = 0;
+        img.data[i + 3] = Math.min(0.42, dark) * 255;
+      } else {
+        img.data[i] = 235;
+        img.data[i + 1] = 240;
+        img.data[i + 2] = 170;
+        img.data[i + 3] = Math.min(0.2, -dark * 0.7) * 255;
+      }
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const overlayMap = new THREE.CanvasTexture(c);
+  overlayMap.colorSpace = THREE.SRGBColorSpace;
+  const overlay = new THREE.Mesh(
+    new THREE.PlaneGeometry(L, W),
+    new THREE.MeshStandardMaterial({
+      map: overlayMap,
+      transparent: true,
+      roughness: 1,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    }),
+  );
+  overlay.rotation.x = -Math.PI / 2;
+  overlay.position.y = 0.012;
+  overlay.receiveShadow = true;
+  group.add(overlay);
 
   const lm = lineMaterial();
   const hl = FIELD.length / 2;
@@ -76,11 +108,10 @@ function createPitch(group) {
   }
 }
 
-// Тай-казан: круглая насыпь с чашей внутри
-function createKazan(team) {
-  const g = new THREE.Group();
+// Профиль казана (тело вращения) — общий для картинки и для физической сетки
+function kazanProfile() {
   const { innerR, outerR, height } = KAZAN;
-  const pts = [
+  return [
     new THREE.Vector2(0.001, 0.25),
     new THREE.Vector2(innerR * 0.75, 0.27),
     new THREE.Vector2(innerR * 0.97, 0.45),
@@ -91,6 +122,21 @@ function createKazan(team) {
     new THREE.Vector2(outerR - 0.25, 0.3),
     new THREE.Vector2(outerR, 0.0),
   ];
+}
+
+export function kazanCollisionMesh() {
+  const g = new THREE.LatheGeometry(kazanProfile(), 40);
+  return {
+    vertices: new Float32Array(g.attributes.position.array),
+    indices: new Uint32Array(g.index.array),
+  };
+}
+
+// Тай-казан: круглая насыпь с чашей внутри
+function createKazan(team) {
+  const g = new THREE.Group();
+  const { innerR, outerR, height } = KAZAN;
+  const pts = kazanProfile();
   const rough = makeNoiseMap(256, 31, 6);
   const clay = new THREE.MeshStandardMaterial({
     color: 0xb9a184,
@@ -196,9 +242,9 @@ function createFence(group) {
   }
 }
 
-export function createField(scene) {
+export function createField(scene, assets) {
   const group = new THREE.Group();
-  createPitch(group);
+  createPitch(group, assets);
   createFence(group);
 
   const flags = [];
