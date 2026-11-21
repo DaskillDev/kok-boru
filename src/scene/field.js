@@ -2,6 +2,17 @@ import * as THREE from 'three';
 import { FIELD, KAZAN, TEAMS, RULES } from '../config.js';
 import { makeNoiseMap } from './textures.js';
 import { fbm2 } from './noise.js';
+import { flagCanvas } from '../data/countries.js';
+
+const flagTex = new Map();
+function flagTexture(code) {
+  if (!flagTex.has(code)) {
+    const t = new THREE.CanvasTexture(flagCanvas(code, 256, 160));
+    t.colorSpace = THREE.SRGBColorSpace;
+    flagTex.set(code, t);
+  }
+  return flagTex.get(code);
+}
 
 const LINE_Y = 0.03;
 
@@ -90,6 +101,7 @@ function createPitch(group, assets) {
   overlay.position.y = 0.012;
   overlay.receiveShadow = true;
   group.add(overlay);
+  group.userData.overlay = overlay;
 
   const lm = lineMaterial();
   const hl = FIELD.length / 2;
@@ -277,7 +289,12 @@ export function createField(scene, assets) {
       const team = TEAMS.find((t) => t.attackDir === -side.s);
       side.kazan.userData.rimMat.color.set(team.color);
       side.kazan.userData.beltMat.color.set(team.trim);
-      for (const f of side.flags) f.userData.cloth.material.color.set(team.color);
+      for (const f of side.flags) {
+        const m = f.userData.cloth.material;
+        m.map = flagTexture(team.code);
+        m.color.set(0xffffff);
+        m.needsUpdate = true;
+      }
     }
   }
   setSides();

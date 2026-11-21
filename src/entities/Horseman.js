@@ -26,13 +26,15 @@ function makeNameTag(text, css) {
   sprite.userData.draw = (name, human) => {
     const ctx = c.getContext('2d');
     ctx.clearRect(0, 0, 256, 64);
-    ctx.font = '700 34px Segoe UI, sans-serif';
+    let size = 34;
+    ctx.font = `700 ${size}px Segoe UI, sans-serif`;
+    while (ctx.measureText(name).width > 240 && size > 18) ctx.font = `700 ${(size -= 2)}px Segoe UI, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 5;
     ctx.strokeStyle = 'rgba(10,16,24,0.7)';
     ctx.strokeText(name, 128, 34);
-    ctx.fillStyle = human ? '#ffe27a' : css;
+    ctx.fillStyle = human ? '#ffe27a' : sprite.userData.css || css;
     ctx.fillText(name, 128, 34);
     tex.needsUpdate = true;
   };
@@ -70,6 +72,9 @@ export class Horseman {
     this.prevFeint = false;
     this.frozen = false;
     this.speedFactor = 1; // множитель скорости (сложность ботов)
+    // порода коня и характеристики всадника (страна) — множители
+    this.breed = { speed: 1, accel: 1, turn: 1, stamina: 1, mass: 1 };
+    this.skills = { power: 1, accuracy: 1, grip: 1 };
     this.feintCooldown = 0;
 
     // --- улак ---
@@ -92,7 +97,8 @@ export class Horseman {
     this.tilt.add(this.horse.mesh);
     this.seat = new THREE.Group(); // следует за спиной коня
     this.tilt.add(this.seat);
-    this.seat.add(createTack(this.team));
+    this.tack = createTack(this.team);
+    this.seat.add(this.tack);
     this.rider = new RiderFigure(this.team, number);
     this.seat.add(this.rider.group);
 
@@ -126,6 +132,17 @@ export class Horseman {
     this.tag = makeNameTag(name, this.team.css);
     this.tag.position.y = 3.0;
     this.group.add(this.tag);
+  }
+
+  // Перекраска под команду после выбора стран
+  applyTeam() {
+    this.team = TEAMS[this.teamId];
+    this.rider.setTeam(this.team);
+    this.seat.remove(this.tack);
+    this.tack = createTack(this.team);
+    this.seat.add(this.tack);
+    this.tag.userData.css = this.team.css;
+    this.tag.userData.draw(this.name, this.isHuman);
   }
 
   setName(name) {
@@ -175,7 +192,7 @@ export class Horseman {
     const wantsSprint = c.sprint && throttle > 0.1 && !this.exhausted;
     this.sprinting = wantsSprint && this.stamina > 0;
     if (this.sprinting) {
-      this.stamina -= STAMINA.drain * dt;
+      this.stamina -= (STAMINA.drain * dt) / this.breed.stamina;
       if (this.stamina <= 0) {
         this.stamina = 0;
         this.exhausted = true;
@@ -188,7 +205,7 @@ export class Horseman {
     }
 
     // разгон / торможение
-    let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor;
+    let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor * this.breed.speed;
     if (this.hasUlak) max *= HORSE.carrySpeedFactor;
     if (this.charging) max *= 0.85;
     if (this.inTug) max *= 0.85; // в борьбе за улак кони идут связкой
@@ -200,7 +217,7 @@ export class Horseman {
     // тяга падает с ростом скорости: с места конь берёт резво, к пределу — всё медленнее
     const pull = THREE.MathUtils.clamp(1.3 - Math.abs(this.speed) / max, 0.3, 1.3);
     if (target > this.speed)
-      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull;
+      rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull * this.breed.accel;
     else rate = throttle < 0 && this.speed > 0 ? HORSE.brake : throttle === 0 ? HORSE.coast : HORSE.accel;
     const before = this.speed;
     const ds = target - this.speed;
@@ -208,7 +225,7 @@ export class Horseman {
 
     // поворот: предел бокового ускорения, ω ≤ a / v
     const v = Math.abs(this.speed);
-    const turnRate = Math.min(HORSE.turnRateSlow, HORSE.lateralAccel / Math.max(v, 1));
+    const turnRate = Math.min(HORSE.turnRateSlow, HORSE.lateralAccel / Math.max(v, 1)) * this.breed.turn;
     // крутой поворот на скорости «съедает» ход
     this.speed -= Math.sign(this.speed) * Math.abs(this.turn) * v * HORSE.turnDrag * dt;
     const targetTurn = steer * turnRate * (this.speed < -0.2 ? -1 : 1);
@@ -236,7 +253,7 @@ export class Horseman {
 
   // Импульс (кг·м/с) в точке со смещением (rx, rz) от центра: меняет скорость и разворачивает корпус
   applyImpulse(jx, jz, rx = 0, rz = 0) {
-    const m = HORSE.mass + (this.hasUlak ? 30 : 0);
+    const m = HORSE.mass * this.breed.mass + (this.hasUlak ? 30 : 0);
     this.vel.x += jx / m;
     this.vel.z += jz / m;
     // момент вокруг вертикали (см. Match: скорость точки = ω·(r_z, −r_x))
@@ -305,10 +322,14 @@ export class Horseman {
   }
 
   // Параметры броска при заданной силе замаха (0..1)
-  throwVelocity(charge, out = new THREE.Vector3()) {
+  throwVelocity(charge, out = new THREE.Vector3(), noise = false) {
     const h = THREE.MathUtils.lerp(ULAK.minThrowH, ULAK.maxThrowH, charge);
     const v = THREE.MathUtils.lerp(ULAK.minThrowV, ULAK.maxThrowV, charge);
-    out.set(Math.sin(this.heading) * h, v, Math.cos(this.heading) * h);
+    // меткость: разброс направления и силы зависит от точности всадника
+    const spread = noise ? (0.05 / this.skills.accuracy) * (0.5 + charge) : 0;
+    const hd = this.heading + (Math.random() - 0.5) * 2 * spread;
+    const pk = 1 + (Math.random() - 0.5) * spread * 1.2;
+    out.set(Math.sin(hd) * h * pk, v * pk, Math.cos(hd) * h * pk);
     out.x += this.vel.x * ULAK.carrierInherit;
     out.z += this.vel.z * ULAK.carrierInherit;
     return out;

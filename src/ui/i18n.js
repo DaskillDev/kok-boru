@@ -1,4 +1,5 @@
 import { settings, setSetting } from './settings.js';
+import { EXTRA } from './i18n_extra.js';
 
 // Тексты интерфейса: русский и кыргызский.
 
@@ -315,6 +316,11 @@ const S = {
   },
 };
 
+// дополнительные тексты и английский язык
+for (const [lang, dict] of Object.entries(EXTRA)) S[lang] = { ...(S[lang] || {}), ...dict };
+
+export const LANGS = ['ru', 'kg', 'en'];
+
 export function t(key) {
   return S[settings.lang]?.[key] ?? S.ru[key] ?? key;
 }
@@ -323,7 +329,7 @@ export function t(key) {
 export function applyI18n(root = document) {
   for (const el of root.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
   for (const el of root.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
-  document.documentElement.lang = settings.lang === 'kg' ? 'ky' : 'ru';
+  document.documentElement.lang = settings.lang === 'kg' ? 'ky' : settings.lang;
 }
 
 export function setLang(lang) {

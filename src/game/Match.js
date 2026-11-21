@@ -511,9 +511,11 @@ export class Match {
         const holder = ulak.holder;
         if (holder.stealImmunity > 0) continue;
         // схватился за улак — начинается борьба («тартыш»)
-        this.tug = { holder, rival: r, t: 0, score: 0, bias: (Math.random() - 0.5) * 1.2 };
+        this.tug = { holder, rival: r, t: 0, score: 0, bias: (Math.random() - 0.5) * 1.2, quiz: false };
         holder.inTug = r.inTug = true;
         ulak.tugRival = r;
+        // математическая дуэль: исход решает пример (если участвует игрок)
+        if (this.mathDuel?.(holder, r)) this.tug.quiz = true;
         this.events.onTug?.(holder, r);
       }
     }
@@ -591,6 +593,7 @@ export class Match {
   // Борьба за улак: всадники идут связкой, исход решают выносливость, рывок и доля случая
   _tugStep(dt) {
     const tug = this.tug;
+    if (tug.quiz) return; // ждём ответа в математической дуэли
     const h = tug.holder;
     const r = tug.rival;
     if (!h.hasUlak) {
@@ -624,19 +627,26 @@ export class Match {
     h.jolt = Math.max(h.jolt, 0.35);
     r.jolt = Math.max(r.jolt, 0.35);
 
-    const sH = 1 + 0.6 * h.stamina + (h.sprinting ? 0.35 : 0);
+    // исход решают сила всадника, хват, выносливость и рывок
+    const sH = (1 + 0.6 * h.stamina + (h.sprinting ? 0.35 : 0)) * h.skills.grip;
     const sR =
-      0.95 +
-      0.6 * r.stamina +
-      (r.sprinting ? 0.35 : 0) +
-      (r.isHuman && r.controls.action ? 0.3 : 0) +
-      (h.charging ? 0.3 : 0);
+      (0.95 + 0.6 * r.stamina + (r.sprinting ? 0.35 : 0) + (r.isHuman && r.controls.action ? 0.3 : 0) + (h.charging ? 0.3 : 0)) *
+      r.skills.power;
     tug.score += (sR - sH + tug.bias) * dt;
     tug.t += dt;
     if (tug.t < ULAK.tugTime && Math.abs(tug.score) < 0.6) return;
 
-    const stolen = tug.score > 0;
+    this.resolveTug(tug.score > 0);
+  }
+
+  // Итог борьбы за улак (вызывается и после математической дуэли)
+  resolveTug(stolen) {
+    const tug = this.tug;
+    if (!tug) return;
+    const h = tug.holder;
+    const r = tug.rival;
     this._endTug();
+    if (!h.hasUlak) return;
     if (stolen) {
       h.charging = false;
       h.charge = 0;
@@ -659,7 +669,7 @@ export class Match {
       this.tug.rival.grabCooldown = 0.8;
       this._endTug();
     }
-    const vel = r.throwVelocity(r.charge);
+    const vel = r.throwVelocity(r.charge, undefined, true);
     const pos = r.throwOrigin();
     this.ulak.release(pos, vel, r);
     r.charging = false;

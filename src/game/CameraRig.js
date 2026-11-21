@@ -11,6 +11,7 @@ export const CAMERA_MODES = [
   { id: 'tv', label: 'camTv' },
   { id: 'top', label: 'camTop' },
   { id: 'first', label: 'camFirst' },
+  { id: 'free', label: 'camFree' },
 ];
 
 const _want = new THREE.Vector3();
@@ -18,8 +19,32 @@ const _look = new THREE.Vector3();
 const _head = new THREE.Vector3();
 
 export class CameraRig {
-  constructor(camera) {
+  constructor(camera, dom) {
     this.camera = camera;
+    // свободная камера: вращение мышью, приближение колесом
+    this.free = { yaw: 0, pitch: 0.35, dist: 14 };
+    if (dom) {
+      let drag = null;
+      dom.addEventListener('pointerdown', (e) => {
+        if (this.mode === 'free' && e.pointerType === 'mouse') drag = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointermove', (e) => {
+        if (!drag) return;
+        this.free.yaw -= (e.clientX - drag.x) * 0.006;
+        this.free.pitch = THREE.MathUtils.clamp(this.free.pitch + (e.clientY - drag.y) * 0.005, 0.05, 1.35);
+        drag = { x: e.clientX, y: e.clientY };
+      });
+      window.addEventListener('pointerup', () => (drag = null));
+      dom.addEventListener(
+        'wheel',
+        (e) => {
+          if (this.mode !== 'free') return;
+          this.free.dist = THREE.MathUtils.clamp(this.free.dist * (e.deltaY > 0 ? 1.1 : 0.9), 4, 90);
+          e.preventDefault();
+        },
+        { passive: false },
+      );
+    }
     this.modeIndex = 0;
     this.yaw = 0;
     this.dist = 9.5;
@@ -74,6 +99,7 @@ export class CameraRig {
 
   snap(target) {
     this.yaw = target.heading;
+    if (this.mode === 'free') this.free.yaw = target.heading;
     this.focus.copy(target.pos);
     this._compute(target, null);
     this.camera.position.copy(_want);
@@ -98,6 +124,11 @@ export class CameraRig {
       const camX = THREE.MathUtils.clamp(f.x * 0.92, -FIELD.length / 2 + 12, FIELD.length / 2 - 12);
       _want.set(camX, 27, FIELD.width / 2 + 34);
       _look.set(f.x, 1, f.z * 0.55);
+    } else if (this.mode === 'free') {
+      const f = this.free;
+      const h = Math.cos(f.pitch) * f.dist;
+      _want.set(target.pos.x - Math.sin(f.yaw) * h, 1.5 + Math.sin(f.pitch) * f.dist, target.pos.z - Math.cos(f.yaw) * h);
+      _look.set(target.pos.x, 1.6, target.pos.z);
     } else if (this.mode === 'top') {
       const f = this.focus;
       _want.set(f.x, 58, f.z + 16);

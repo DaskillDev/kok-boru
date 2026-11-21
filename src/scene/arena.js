@@ -124,6 +124,83 @@ export function createArena(scene) {
   bodies.instanceColor.needsUpdate = heads.instanceColor.needsUpdate = true;
   bodies.receiveShadow = heads.receiveShadow = true;
   group.add(bodies, heads);
+  // прожекторные мачты по углам поля
+  const mastMat = new THREE.MeshStandardMaterial({ color: 0x9aa0a8, roughness: 0.5, metalness: 0.6 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff3d0, emissiveIntensity: 2.2 });
+  const hx = FIELD.length / 2 + 14;
+  const hz = FIELD.width / 2 + 14;
+  for (const [x, z] of [[-hx, -hz], [hx, -hz], [-hx, hz], [hx, hz]]) {
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.6, 30, 10), mastMat);
+    mast.position.set(x, 15, z);
+    mast.castShadow = true;
+    group.add(mast);
+    const head = new THREE.Group();
+    head.position.set(x, 30.5, z);
+    head.lookAt(0, 0, 0);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(6, 3.2, 0.5), mastMat);
+    head.add(frame);
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 2; j++) {
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.2, 0.2), lampMat);
+        lamp.position.set(-1.9 + i * 1.9, -0.75 + j * 1.5, 0.3);
+        head.add(lamp);
+      }
+    }
+    group.add(head);
+  }
+
+  // табло над трибуной: команды, счёт, время
+  const sbCanvas = document.createElement('canvas');
+  sbCanvas.width = 1024;
+  sbCanvas.height = 384;
+  const sbTex = new THREE.CanvasTexture(sbCanvas);
+  sbTex.colorSpace = THREE.SRGBColorSpace;
+  const board = new THREE.Mesh(
+    new THREE.PlaneGeometry(22, 8.25),
+    new THREE.MeshBasicMaterial({ map: sbTex, toneMapped: false }),
+  );
+  const boardZ = z0 - ROWS * 1.25 - 0.4;
+  board.position.set(-34, 8.6, boardZ);
+  group.add(board);
+  const boardFrame = new THREE.Mesh(new THREE.BoxGeometry(23, 9.2, 0.6), mastMat);
+  boardFrame.position.set(-34, 8.6, boardZ - 0.35);
+  group.add(boardFrame);
+  for (const sx of [-9, 9]) {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.3, 8, 8), mastMat);
+    leg.position.set(-34 + sx, 2.4, boardZ - 0.4);
+    group.add(leg);
+  }
+  let sbKey = '';
+  function setScoreboard(teams, score, timeText, emblem, flagFor) {
+    const key = `${teams.map((t) => t.code + t.name).join()}|${score}|${timeText}|${emblem}`;
+    if (key === sbKey) return;
+    sbKey = key;
+    const ctx = sbCanvas.getContext('2d');
+    ctx.fillStyle = '#0b1118';
+    ctx.fillRect(0, 0, 1024, 384);
+    ctx.fillStyle = '#e9b949';
+    ctx.font = '700 34px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(emblem, 512, 52);
+    teams.forEach((t, i) => {
+      const x = i === 0 ? 220 : 804;
+      ctx.drawImage(flagFor(t.code), x - 66, 92, 132, 88);
+      ctx.fillStyle = t.css;
+      ctx.font = '800 40px Segoe UI, sans-serif';
+      ctx.fillText(t.name, x, 236);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '900 120px Segoe UI, sans-serif';
+      ctx.fillText(String(score[i]), i === 0 ? 410 : 614, 205);
+    });
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 70px Segoe UI, sans-serif';
+    ctx.fillText(':', 512, 190);
+    ctx.fillStyle = '#ffd34a';
+    ctx.font = '800 58px Segoe UI, sans-serif';
+    ctx.fillText(timeText, 512, 330);
+    sbTex.needsUpdate = true;
+  }
+
   scene.add(group);
 
   let cheerT = 0;
@@ -142,6 +219,7 @@ export function createArena(scene) {
   return {
     group,
     setSides,
+    setScoreboard,
     setVisible(v) {
       bodies.visible = heads.visible = v;
     },

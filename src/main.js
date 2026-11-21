@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { TEAMS, FIELD, KAZAN } from './config.js';
+import { TEAMS, FIELD, KAZAN, setTeamCountry } from './config.js';
+import { COUNTRIES, countryByCode, countryName, flagCanvas } from './data/countries.js';
+import { BREEDS, breedById, breedFactors, riderFactors } from './data/horses.js';
+import { MathDuel } from './game/MathDuel.js';
 import {
   createRenderer,
   createPostFX,
@@ -47,16 +50,19 @@ const ROSTER = [
 const DIFFICULTY = {
   easy: { skill: 0.3, speed: 0.85 },
   medium: { skill: 0.6, speed: 0.94 },
-  hard: { skill: 0.9, speed: 1.0 },
+  hard: { skill: 0.85, speed: 1.0 },
+  expert: { skill: 1.0, speed: 1.04 },
 };
+const MAX_PER_TEAM = 10;
 const MAPS = {
+  sand: { pitch: 0xf6d9a6, steppe: 0xeed3a0, sand: true }, // по правилам поле покрыто промытым песком
   jailoo: { pitch: 0xffffff, steppe: 0xffffff },
   autumn: { pitch: 0xf2d79a, steppe: 0xeec98a },
 };
 const QUALITY_ORDER = ['high', 'medium', 'low'];
 // награда за матч: [опыт, монеты]; множитель — за сложность
 const REWARD = { win: [100, 50], draw: [60, 25], lose: [40, 15], goal: [15, 10] };
-const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6 };
+const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6, expert: 2 };
 
 const touch = isTouchDevice();
 document.body.classList.toggle('touch', touch);
@@ -72,7 +78,10 @@ camera.position.set(0, 6, 22);
 const postfx = createPostFX(renderer, scene, camera);
 
 const input = new Input();
-const rig = new CameraRig(camera);
+const rig = new CameraRig(camera, renderer.domElement);
+const mathDuel = new MathDuel();
+const view3dEl = document.getElementById('view3d');
+let viewTarget = null; // объект, который показывается из энциклопедии
 const aim = new AimGuide(scene);
 const dust = new Dust(scene);
 const minimap = new Minimap(document.getElementById('minimap'));
@@ -87,7 +96,7 @@ const passRing = new THREE.Mesh(
 passRing.rotation.x = -Math.PI / 2;
 passRing.visible = false;
 scene.add(passRing);
-const NUMBERS = [7, 10, 5, 3];
+const NUMBERS = [7, 10, 5, 3, 9, 11, 4, 8, 6, 2];
 const tips = new Set(); // советы новичку, показанные в этой сессии
 let autoLevel = 'high'; // текущий уровень в режиме «Авто»
 let slowT = 0;
@@ -125,6 +134,9 @@ let paused = false;
 let lastCfg = null;
 let switchTimer = 0;
 let matchGoals = 0;
+const matchStats = { passes: 0, steals: 0, duelsWon: 0 };
+let physics = null;
+let lastDuelAt = -99;
 let lastThrow = null; // для «ахов» трибун, если бросок прошёл рядом с казаном
 
 const menu = new Menu({
@@ -133,6 +145,12 @@ const menu = new Menu({
   onResume: () => resume(),
   onRestart: () => startMatch(lastCfg ?? settings.quick),
   onExit: () => exitToMenu(),
+  onView3D: (view) => showView3D(view),
+});
+document.getElementById('view3d-close').addEventListener('click', () => {
+  viewTarget = null;
+  view3dEl.classList.add('hidden');
+  menu.show('enc');
 });
 
 const inMatch = () => match && !demo && match.state !== 'idle' && match.state !== 'over';
@@ -165,10 +183,129 @@ function applyNames() {
   }
 }
 
+// Песок для арены: светлый, с крупными следами и мелкой зернистостью
+let sandTex = null;
+function sandTexture() {
+  if (sandTex) return sandTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#c9a774';
+  ctx.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 1400; i++) {
+    // пятна утоптанного и взрыхлённого песка
+    const x = Math.random() * 512;
+    const y = Math.random() * 512;
+    const r = 6 + Math.random() * 40;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const light = Math.random() < 0.5;
+    g.addColorStop(0, light ? 'rgba(236,212,170,0.18)' : 'rgba(150,118,78,0.16)');
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  const img = ctx.getImageData(0, 0, 512, 512);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const n = (Math.random() - 0.5) * 26;
+    img.data[i] += n;
+    img.data[i + 1] += n;
+    img.data[i + 2] += n * 0.8;
+  }
+  ctx.putImageData(img, 0, 0);
+  sandTex = new THREE.CanvasTexture(c);
+  sandTex.colorSpace = THREE.SRGBColorSpace;
+  sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+  sandTex.repeat.set((FIELD.length + 16) / 9, (FIELD.width + 16) / 9);
+  sandTex.anisotropy = 8;
+  return sandTex;
+}
+
 function applyMap(id) {
   const m = MAPS[id] ?? MAPS.jailoo;
-  field.group.userData.pitchMaterial.color.set(m.pitch);
+  const pm = field.group.userData.pitchMaterial;
+  pm.userData.grassMap ??= pm.map;
+  pm.map = m.sand ? sandTexture() : pm.userData.grassMap;
+  pm.needsUpdate = true;
+  pm.color.set(m.sand ? 0xffffff : m.pitch);
+  pm.normalScale.setScalar(m.sand ? 0.5 : 1.6);
+  field.group.userData.overlay.visible = !m.sand; // на песке нет полос покоса
   steppe.material.color.set(m.steppe);
+}
+
+// Команды-сборные: цвета из флага; если цвета соперника похожи на наши — берём запасную форму
+function applyCountries(playerCode, opponentCode) {
+  const L = settings.lang;
+  const mine = countryByCode(playerCode);
+  let foe = countryByCode(opponentCode);
+  if (foe.code === mine.code) foe = COUNTRIES.find((c) => c.code !== mine.code);
+  const c0 = new THREE.Color(mine.colors.color);
+  const hueDist = (a, b) => {
+    const ha = {};
+    const hb = {};
+    a.getHSL(ha);
+    b.getHSL(hb);
+    const d = Math.abs(ha.h - hb.h);
+    return Math.min(d, 1 - d) + Math.abs(ha.l - hb.l) * 0.5;
+  };
+  const foeColors = hueDist(c0, new THREE.Color(foe.colors.color)) < 0.08 ? foe.alt : foe.colors;
+  setTeamCountry(0, mine, mine.colors, countryName(mine, L));
+  setTeamCountry(1, foe, foeColors, countryName(foe, L));
+  document.querySelector('.team-0 .tname').textContent = TEAMS[0].name;
+  document.querySelector('.team-1 .tname').textContent = TEAMS[1].name;
+  document.querySelector('.team-0').style.borderLeftColor = TEAMS[0].css;
+  document.querySelector('.team-1').style.borderRightColor = TEAMS[1].css;
+  field.setSides();
+  arena.setSides();
+  // имена ботов — по стране команды
+  const names = [mine.names.slice(), foe.names.slice()];
+  for (const r of riders) {
+    const c = r.teamId === 0 ? mine : foe;
+    r.country = c;
+    r.skills = riderFactors(c);
+    if (r.id !== 0) r.setName(`${c.code} · ${names[r.teamId][r.slot % names[r.teamId].length]}`);
+    r.applyTeam();
+  }
+  return foe.code;
+}
+
+// Порода: игроку — выбранная, ботам — случайная (у каждого своя)
+function applyBreeds() {
+  for (const r of riders) {
+    const b = r.id === 0 ? breedById(settings.rider.breed) : BREEDS[(r.id * 7 + r.teamId * 3) % BREEDS.length];
+    r.breed = breedFactors(b);
+    if (r.id !== 0) r.horse.setCoat(b.coat);
+    r.rider.setHat(r.id === 0 ? settings.rider.hat : r.country?.code === 'KGZ' ? 'kalpak' : r.slot % 2 ? 'helmet' : 'tebetey');
+  }
+}
+
+// Создаёт недостающих всадников (составы до 10 на 10)
+function ensureRiders(size) {
+  for (const teamId of [0, 1]) {
+    let have = riders.filter((r) => r.teamId === teamId).length;
+    while (have < size) {
+      const id = riders.length;
+      const h = new Horseman({ id, teamId, name: '', coat: 'bay', number: NUMBERS[have % NUMBERS.length] });
+      h.slot = have++;
+      scene.add(h.group);
+      physics.addRider(h);
+      riders.push(h);
+      brains.push(new BotBrain(h, 0.6));
+    }
+  }
+}
+
+// Энциклопедия: облёт камеры вокруг объекта
+function showView3D(view) {
+  menu.hide();
+  view3dEl.classList.remove('hidden');
+  const p = riders[0].pos;
+  viewTarget = {
+    ulak: { c: ulak.pos.clone(), r: 3.2, h: 1.6 },
+    kazan: { c: new THREE.Vector3(KAZAN.x, 0, 0), r: 11, h: 5 },
+    horse: { c: p.clone(), r: 5.5, h: 2.4 },
+    rider: { c: p.clone().setY(0.6), r: 3.6, h: 2.6 },
+    field: { c: new THREE.Vector3(), r: 130, h: 60 },
+  }[view] ?? { c: new THREE.Vector3(), r: 60, h: 30 };
 }
 
 onSettings((key) => {
@@ -183,7 +320,11 @@ onSettings((key) => {
   if (key === 'lang' || key === 'nickname') {
     applyI18n();
     touchControls._label = '';
-    if (riders[0]) riders[0].setName(playerName());
+    if (riders[0]) riders[0].setName(`${settings.rider.country} · ${playerName()}`);
+  }
+  if (key === 'rider' && riders[0]) {
+    riders[0].rider.setHat(settings.rider.hat);
+    riders[0].setName(`${settings.rider.country} · ${playerName()}`);
   }
 });
 
@@ -203,7 +344,7 @@ async function init() {
     return yurts.some((y) => Math.hypot(y.position.x - x, y.position.z - z) < 4.5);
   });
 
-  const physics = new PhysicsWorld(kazanCollisionMesh());
+  physics = new PhysicsWorld(kazanCollisionMesh());
   const slots = [0, 0];
   riders = ROSTER.map((r, id) => {
     const slot = slots[r.teamId]++;
@@ -297,11 +438,14 @@ async function init() {
         lastThrow = { t: 0, team: r.teamId };
       },
       onPass: (r) => {
-        if (!demo) audio.throwSound(r.pos.x, r.pos.z, 0.3);
+        if (demo) return;
+        audio.throwSound(r.pos.x, r.pos.z, 0.3);
+        if (r === player) matchStats.passes++;
       },
       onSteal: (thief, victim) => {
         if (demo) return;
         audio.shout(thief.pos.x, thief.pos.z, 1.1);
+        if (thief === player) matchStats.steals++;
         audio.steal(thief.teamId === player.teamId);
         if (thief === player) hud.showBanner(`<small>${t('stolen')}</small>`, 1);
         else if (victim === player) hud.showBanner(`<small>${t('lostUlak')}</small>`, 1.2);
@@ -327,12 +471,33 @@ async function init() {
         else if (!stolen && rival === player) hud.showBanner(`<small>${t('notStolen')}</small>`, 0.9);
       },
       onEnd: (score) => (demo ? startDemo() : finishMatch(score)),
+      onPassStat: () => {},
     },
   });
+
+  match.mathDuel = (holder, rival) => {
+    const cfg = lastCfg;
+    if (demo || !cfg?.math || (holder !== player && rival !== player)) return false;
+    if (time - lastDuelAt < 12) return false; // не чаще раза в 12 секунд — иначе обычная борьба
+    lastDuelAt = time;
+    const foe = holder === player ? rival : holder;
+    mathDuel.start(
+      { level: cfg.mathLevel, answerTime: cfg.mathTime, botLevel: cfg.difficulty, rivalName: foe.name },
+      (playerWon) => {
+        if (playerWon) matchStats.duelsWon++;
+        hud.showBanner(`<small>${t(playerWon ? 'duelWon' : 'duelLost')}</small>`, 1.2, playerWon ? '#7dff6a' : '#ff8a6a');
+        // игрок — соперник держащего: при победе забирает улак; держащий — при победе сохраняет
+        match.resolveTug(rival === player ? playerWon : !playerWon);
+      },
+    );
+    return true;
+  };
 
   rig.orbitT = 0.6;
   rig.setMode(settings.camera);
   applyQuality();
+  applyCountries(settings.rider.country, settings.quick.opponent);
+  applyBreeds();
   startDemo();
 
   input.onPause = () => togglePause();
@@ -515,6 +680,12 @@ function startMatch(cfg) {
   demo = false;
   player = null;
   lastCfg = { ...cfg };
+  ensureRiders(cfg.size);
+  const foe = applyCountries(settings.rider.country, cfg.opponent);
+  if (foe !== cfg.opponent) hud.showBanner(`<small>${t('noTeam')}</small>`, 2);
+  applyBreeds();
+  Object.assign(matchStats, { passes: 0, steals: 0, duelsWon: 0 });
+  lastDuelAt = -99;
   const diff = DIFFICULTY[cfg.difficulty] ?? DIFFICULTY.easy;
   for (const b of brains) {
     // напарники играют ровно, соперники — по выбранной сложности
@@ -523,9 +694,10 @@ function startMatch(cfg) {
     b.rider.speedFactor = foe ? diff.speed : 1;
     // в составах 3×3 и 4×4 последний всадник команды — «вратарь» у своего казана
     b.role = cfg.size >= 3 && b.rider.slot === cfg.size - 1 ? 'keeper' : 'field';
+    b.rider.flagSkill = foe ? diff.skill : 0.55;
   }
   setHuman(riders[0]);
-  riders[0].setName(playerName());
+  riders[0].setName(`${settings.rider.country} · ${playerName()}`);
   const weather = cfg.weather === 'random' ? WEATHER_IDS[Math.floor(Math.random() * WEATHER_IDS.length)] : cfg.weather;
   const mapIds = Object.keys(MAPS);
   applyWeather(scene, renderer, env, weather);
@@ -534,7 +706,7 @@ function startMatch(cfg) {
   setupRoster(cfg.size);
   match.configure(match.riders, cfg.time);
   matchGoals = 0;
-  match.goldenGoal = true;
+  match.goldenGoal = cfg.draw !== 'draw';
   match.start();
   audio.ambience(true);
   menu.inMatch = true;
@@ -582,6 +754,9 @@ function finishMatch(score) {
     wins: st.wins + (a > b ? 1 : 0),
     draws: st.draws + (a === b ? 1 : 0),
     goals: st.goals + matchGoals,
+    passes: (st.passes || 0) + matchStats.passes,
+    steals: (st.steals || 0) + matchStats.steals,
+    duelsWon: (st.duelsWon || 0) + matchStats.duelsWon,
   });
   // награда: опыт и монеты
   const res = a > b ? 'win' : a < b ? 'lose' : 'draw';
@@ -658,7 +833,10 @@ function frame(now) {
 
   if (match) {
     const live = match.state !== 'idle' && !paused;
-    if (live && demo) match.update(dt);
+    if (mathDuel.busy) {
+      if (!paused) mathDuel.update(dt);
+      updateSound(0);
+    } else if (live && demo) match.update(dt);
     else if (live) {
       autoSwitch(dt);
       input.apply(player.controls, player, rig.screenRelative);
@@ -681,7 +859,9 @@ function frame(now) {
     passRing.visible = !!mate;
     if (mate) passRing.position.set(mate.pos.x, 0.07, mate.pos.z);
 
-    if (demo) {
+    if (viewTarget) {
+      rig.orbit(dt, viewTarget.c, viewTarget.r, viewTarget.h);
+    } else if (demo) {
       // камера плавно облетает место, где идёт игра
       _demoCam.lerp(ulak.pos, 1 - Math.exp(-dt * 0.8));
       _demoCam.y = 0;
@@ -711,6 +891,14 @@ function frame(now) {
     }
     field.update(time);
     arena.update(dt, time);
+    const secs = Math.max(0, Math.ceil(match.overtime ? match.overtimeLeft : match.time));
+    arena.setScoreboard(
+      TEAMS,
+      match.score,
+      `${match.overtime ? t('otShort') + ' ' : `${match.period}/${match.periods}  `}${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`,
+      t('scoreboardEmblem'),
+      (code) => flagCanvas(code, 192, 128),
+    );
   }
   hud.update(dt);
   postfx.render();

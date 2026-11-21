@@ -29,9 +29,11 @@ export const RULES = {
 };
 export const GRAVITY = 9.8;
 
+// Команды: страна, цвета и название назначаются перед матчем (setTeamCountry)
 export const TEAMS = [
   {
     id: 0,
+    code: 'KGZ',
     name: 'Көк',
     color: 0x2b6ad8,
     dark: 0x173a7a,
@@ -41,6 +43,7 @@ export const TEAMS = [
   },
   {
     id: 1,
+    code: 'KAZ',
     name: 'Кызыл',
     color: 0xc8302c,
     dark: 0x6e1715,
@@ -102,3 +105,11 @@ export const ULAK = {
   releaseHeight: 2.4,
   carrierInherit: 0.6,
 };
+
+// Назначает команде страну и цвета формы
+export function setTeamCountry(teamId, country, colors, displayName) {
+  const t = TEAMS[teamId];
+  t.code = country.code;
+  t.name = displayName;
+  Object.assign(t, colors);
+}

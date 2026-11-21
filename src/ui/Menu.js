@@ -1,21 +1,43 @@
 import { settings, setSetting, getSetting, onSettings, COAT_SHOP, levelOf } from './settings.js';
-import { t, setLang, applyI18n } from './i18n.js';
+import { t, setLang, applyI18n, LANGS } from './i18n.js';
+import { ENCYCLOPEDIA } from './i18n_extra.js';
+import { COUNTRIES, flagCanvas, countryName } from '../data/countries.js';
+import { BREEDS } from '../data/horses.js';
 
 // Меню игры: главное, быстрый матч, онлайн (заглушка), настройки, пауза, результат, справка.
 // Вся разметка строится здесь; оформление — в style.css.
 
 const QUICK_ROWS = [
+  { key: 'quick.opponent', label: 'opponent', icon: '⚑', options: 'countries' },
   { key: 'quick.time', label: 'time', icon: '◷', options: [[180, 'per1'], [360, 'per2'], [900, 'per5'], [2700, 'per15']] },
-  { key: 'quick.difficulty', label: 'difficulty', icon: '⚙', options: [['easy', 'easy'], ['medium', 'medium'], ['hard', 'hard']] },
-  { key: 'quick.size', label: 'size', icon: '⚑', options: [[1, 'size1'], [2, 'size2'], [3, 'size3'], [4, 'size4']] },
+  { key: 'quick.draw', label: 'onDraw', icon: '=', options: [['golden', 'drawGolden'], ['draw', 'drawDraw']] },
+  {
+    key: 'quick.size',
+    label: 'size',
+    icon: '♞',
+    options: [[1, 'size1'], [2, 'size2'], [3, 'size3'], [4, 'size4'], [5, 'size5'], [6, 'size6'], [8, 'size8'], [10, 'size10']],
+  },
+  {
+    key: 'quick.difficulty',
+    label: 'difficulty',
+    icon: '⚙',
+    options: [['easy', 'easy'], ['medium', 'medium'], ['hard', 'hard'], ['expert', 'expert']],
+  },
   {
     key: 'quick.weather',
     label: 'weather',
     icon: '☼',
     options: [['random', 'random'], ['clear', 'clear'], ['overcast', 'overcast'], ['evening', 'evening'], ['fog', 'fog']],
   },
-  { key: 'quick.map', label: 'map', icon: '▦', options: [['random', 'random'], ['jailoo', 'jailoo'], ['autumn', 'autumn']] },
+  { key: 'quick.map', label: 'map', icon: '▦', options: [['random', 'random'], ['sand', 'sand'], ['jailoo', 'jailoo'], ['autumn', 'autumn']] },
+  { key: 'quick.math', label: 'mathDuels', icon: '∑', options: [[true, 'mathOn'], [false, 'mathOff']] },
+  { key: 'quick.mathLevel', label: 'mathLevel', icon: '±', options: [['easy', 'mathEasy'], ['medium', 'mathMedium'], ['hard', 'mathHard']] },
+  { key: 'quick.mathTime', label: 'mathTime', icon: '⧗', options: [[5, 'sec5'], [7, 'sec7'], [10, 'sec10']] },
 ];
+
+const HATS = ['kalpak', 'tebetey', 'helmet'];
+const statBar = (key, v) =>
+  `<div class="stat"><span data-i18n="st_${key}"></span><i><b style="width:${v}%"></b></i><em>${v}</em></div>`;
 
 const SETTINGS_TABS = {
   controls: [
@@ -33,7 +55,12 @@ const SETTINGS_TABS = {
   ],
   screen: [
     { type: 'seg', key: 'quality', label: 'quality', options: [['auto', 'auto'], ['low', 'low'], ['medium', 'medium'], ['high', 'high']] },
-    { type: 'seg', key: 'camera', label: 'camera', options: [['chase', 'camChase'], ['tv', 'camTv'], ['top', 'camTop'], ['first', 'camFirst']] },
+    {
+      type: 'seg',
+      key: 'camera',
+      label: 'camera',
+      options: [['chase', 'camChase'], ['tv', 'camTv'], ['top', 'camTop'], ['first', 'camFirst'], ['free', 'camFree']],
+    },
     { type: 'seg', key: 'names', label: 'names', options: [['all', 'namesAll'], ['humans', 'namesHumans'], ['none', 'namesNone']] },
   ],
   account: [{ type: 'account' }],
@@ -61,7 +88,11 @@ export class Menu {
       <label class="row">
         <span class="row-label"><i>${r.icon}</i><span data-i18n="${r.label}"></span></span>
         <select data-key="${r.key}">
-          ${r.options.map(([v, k]) => `<option value="${v}" data-i18n="${k}"></option>`).join('')}
+          ${
+            r.options === 'countries'
+              ? COUNTRIES.map((c) => `<option value="${c.code}" data-country="${c.code}"></option>`).join('')
+              : r.options.map(([v, k]) => `<option value="${v}" data-i18n="${k}"></option>`).join('')
+          }
         </select>
       </label>`;
 
@@ -72,7 +103,7 @@ export class Menu {
             <i>☺</i><span><b id="profile-name"></b><small data-i18n="guestHint"></small></span>
           </button>
           <span class="spacer"></span>
-          <div class="lang"><button data-lang="ru">RU</button><button data-lang="kg">KG</button></div>
+          <div class="lang">${LANGS.map((l) => `<button data-lang="${l}">${l.toUpperCase()}</button>`).join('')}</div>
           <button class="icon-btn" data-go="settings" aria-label="settings">⚙</button>
         </header>
         <div class="hero">
@@ -81,11 +112,14 @@ export class Menu {
           <p data-i18n="tagline"></p>
         </div>
         <div class="tiles">
-          <button class="tile tile-quick" data-go="quick" id="tile-quick" disabled>
+          <button class="tile tile-quick" data-go="rider" id="tile-quick" disabled>
             <i>♞</i><b data-i18n="quick"></b><small id="quick-sub" data-i18n="loading"></small><span class="arrow">›</span>
           </button>
           <button class="tile tile-stable" data-go="stable">
             <i>✦</i><b data-i18n="stable"></b><small data-i18n="stableSub"></small><span class="arrow">›</span>
+          </button>
+          <button class="tile tile-enc" data-go="enc">
+            <i>❖</i><b data-i18n="encyclopedia"></b><small data-i18n="encSub"></small><span class="arrow">›</span>
           </button>
           <button class="tile tile-online" data-go="online">
             <i>◍</i><b data-i18n="online"></b><small data-i18n="onlineSub"></small><span class="arrow">›</span>
@@ -93,10 +127,39 @@ export class Menu {
         </div>
       </section>
 
+      <section class="screen panel wide" data-screen="rider">
+        <header><button class="back" data-go="main">‹</button><h2 data-i18n="riderTitle"></h2></header>
+        <div class="panel-body">
+          <div class="cards" id="countries"></div>
+          <div class="rider-opts">
+            <label class="row"><span class="row-label"><i>✎</i><span data-i18n="nickname"></span></span>
+              <input id="rider-name" type="text" maxlength="16" data-i18n-ph="nicknamePh"></label>
+            <div class="field"><h4 data-i18n="hat"></h4><div class="seg">${HATS.map(
+              (h) => `<button data-seg="rider.hat" data-value="${h}" data-i18n="hat_${h}"></button>`,
+            ).join('')}</div></div>
+          </div>
+        </div>
+        <button class="primary" data-go="horse" data-i18n="next"></button>
+      </section>
+
+      <section class="screen panel wide" data-screen="horse">
+        <header><button class="back" data-go="rider">‹</button><h2 data-i18n="horseTitle"></h2></header>
+        <div class="panel-body"><div class="cards" id="breeds"></div></div>
+        <button class="primary" data-go="quick" data-i18n="next"></button>
+      </section>
+
       <section class="screen panel" data-screen="quick">
-        <header><button class="back" data-go="main">‹</button><h2 data-i18n="quick"></h2></header>
-        <div class="panel-body">${QUICK_ROWS.map(row).join('')}</div>
+        <header><button class="back" data-go="horse">‹</button><h2 data-i18n="matchSettings"></h2></header>
+        <div class="panel-body">${QUICK_ROWS.map(row).join('')}<p class="note" data-i18n="mathNote"></p></div>
         <button class="primary" id="play-btn" data-i18n="play"></button>
+      </section>
+
+      <section class="screen panel wide" data-screen="enc">
+        <header><button class="back" data-go="main">‹</button><h2 data-i18n="encyclopedia"></h2></header>
+        <div class="enc">
+          <nav id="enc-nav"></nav>
+          <article id="enc-article"></article>
+        </div>
       </section>
 
       <section class="screen panel" data-screen="stable">
@@ -114,6 +177,7 @@ export class Menu {
           <h3 data-i18n="myStats"></h3>
           <table class="stats"><thead><tr>
             <th data-i18n="stMatches"></th><th data-i18n="stWins"></th><th data-i18n="stDraws"></th><th data-i18n="stGoals"></th>
+            <th data-i18n="stPasses"></th><th data-i18n="stSteals"></th><th data-i18n="stDuels"></th>
           </tr></thead><tbody><tr id="stats-row"></tr></tbody></table>
         </div>
         <button class="primary" data-go="quick" data-i18n="quick"></button>
@@ -180,7 +244,29 @@ export class Menu {
       const seg = e.target.closest('[data-seg]');
       if (seg) {
         const v = seg.dataset.value;
-        setSetting(seg.dataset.seg, isNaN(v) ? v : Number(v));
+        if (seg.dataset.seg.startsWith('rider.')) setSetting('rider', { ...settings.rider, [seg.dataset.seg.slice(6)]: v });
+        else setSetting(seg.dataset.seg, isNaN(v) ? v : Number(v));
+        return;
+      }
+      const country = e.target.closest('[data-pick-country]');
+      if (country) {
+        setSetting('rider', { ...settings.rider, country: country.dataset.pickCountry });
+        return;
+      }
+      const breed = e.target.closest('[data-pick-breed]');
+      if (breed) {
+        setSetting('rider', { ...settings.rider, breed: breed.dataset.pickBreed });
+        return;
+      }
+      const ency = e.target.closest('[data-enc]');
+      if (ency) {
+        this.encItem = ency.dataset.enc;
+        this._renderEnc();
+        return;
+      }
+      const v3d = e.target.closest('[data-view3d]');
+      if (v3d) {
+        this.h.onView3D?.(v3d.dataset.view3d);
         return;
       }
       const coat = e.target.closest('[data-coat]');
@@ -197,12 +283,15 @@ export class Menu {
     });
     this.el.addEventListener('change', (e) => {
       const sel = e.target.closest('select[data-key]');
-      if (sel) setSetting(sel.dataset.key, isNaN(sel.value) ? sel.value : Number(sel.value));
+      if (sel) {
+        const v = sel.value === 'true' ? true : sel.value === 'false' ? false : isNaN(sel.value) ? sel.value : Number(sel.value);
+        setSetting(sel.dataset.key, v);
+      }
     });
     this.el.addEventListener('input', (e) => {
       const r = e.target.closest('input[data-range]');
       if (r) setSetting(r.dataset.range, Number(r.value));
-      const n = e.target.closest('#nickname');
+      const n = e.target.closest('#nickname, #rider-name');
       if (n) setSetting('nickname', n.value.trim().slice(0, 16));
     });
 
@@ -216,8 +305,45 @@ export class Menu {
     $('settings-back').addEventListener('click', () => this.show(this.inMatch ? 'pause' : 'main'));
     $('help-back').addEventListener('click', () => this.h.onResume?.());
 
+    this.encItem = ENCYCLOPEDIA[0].items[0].id;
     this._renderSettings();
     this._sync();
+  }
+
+  _renderEnc() {
+    const L = settings.lang;
+    const loc = (o) => o[L] ?? o.ru;
+    this.el.querySelector('#enc-nav').innerHTML = ENCYCLOPEDIA.map(
+      (g) =>
+        `<h5>${loc(g.group)}</h5>` +
+        g.items.map((i) => `<button data-enc="${i.id}" class="${i.id === this.encItem ? 'active' : ''}">${loc(i.title)}</button>`).join(''),
+    ).join('');
+    const item = ENCYCLOPEDIA.flatMap((g) => g.items).find((i) => i.id === this.encItem);
+    this.el.querySelector('#enc-article').innerHTML = `<h3>${loc(item.title)}</h3><p>${loc(item.text)}</p>
+      <button class="secondary" data-view3d="${item.view}" data-i18n="show3d">${t('show3d')}</button>`;
+    applyI18n(this.el.querySelector('.enc'));
+  }
+
+  _renderCards() {
+    const L = settings.lang;
+    const r = settings.rider;
+    this.el.querySelector('#countries').innerHTML = COUNTRIES.map(
+      (c) => `<button class="card${c.code === r.country ? ' active' : ''}" data-pick-country="${c.code}">
+        <header><canvas class="flag" data-flag="${c.code}" width="48" height="32"></canvas><b>${c.code}</b><span>${countryName(c, L)}</span></header>
+        ${statBar('power', c.stats.power)}${statBar('accuracy', c.stats.accuracy)}${statBar('grip', c.stats.grip)}
+      </button>`,
+    ).join('');
+    this.el.querySelector('#breeds').innerHTML = BREEDS.map(
+      (b) => `<button class="card${b.id === r.breed ? ' active' : ''}" data-pick-breed="${b.id}">
+        <header><b>${b.name[L] ?? b.name.ru}</b></header>
+        ${['speed', 'accel', 'turn', 'stamina', 'weight'].map((k) => statBar(k, b.stats[k])).join('')}
+        <small>${b.note[L] ?? b.note.ru}</small>
+      </button>`,
+    ).join('');
+    for (const cv of this.el.querySelectorAll('canvas[data-flag]'))
+      cv.getContext('2d').drawImage(flagCanvas(cv.dataset.flag), 0, 0, cv.width, cv.height);
+    applyI18n(this.el.querySelector('#countries'));
+    applyI18n(this.el.querySelector('#breeds'));
   }
 
   _renderSettings() {
@@ -249,9 +375,15 @@ export class Menu {
   // Приводит все элементы управления в соответствие с настройками
   _sync() {
     applyI18n(this.el);
+    for (const o of this.el.querySelectorAll('option[data-country]'))
+      o.textContent = `${o.dataset.country} · ${countryName(COUNTRIES.find((c) => c.code === o.dataset.country), settings.lang)}`;
     for (const sel of this.el.querySelectorAll('select[data-key]')) sel.value = String(getSetting(sel.dataset.key));
     for (const b of this.el.querySelectorAll('[data-seg]'))
       b.classList.toggle('active', String(getSetting(b.dataset.seg)) === b.dataset.value);
+    const rn = this.el.querySelector('#rider-name');
+    if (document.activeElement !== rn) rn.value = settings.nickname;
+    if (this.screen === 'rider' || this.screen === 'horse') this._renderCards();
+    if (this.screen === 'enc') this._renderEnc();
     for (const b of this.el.querySelectorAll('[data-toggle]')) b.classList.toggle('on', !!getSetting(b.dataset.toggle));
     for (const r of this.el.querySelectorAll('input[data-range]')) r.value = getSetting(r.dataset.range);
     for (const b of this.el.querySelectorAll('[data-lang]')) b.classList.toggle('active', b.dataset.lang === settings.lang);
@@ -268,7 +400,9 @@ export class Menu {
         <i style="background:${c.css}"></i><b>${t(`coat_${c.id}`)}</b><small>${label}</small></button>`;
     }).join('');
     const st = settings.stats;
-    this.el.querySelector('#stats-row').innerHTML = `<td>${st.matches}</td><td>${st.wins}</td><td>${st.draws}</td><td>${st.goals}</td>`;
+    this.el.querySelector('#stats-row').innerHTML = [st.matches, st.wins, st.draws, st.goals, st.passes, st.steals, st.duelsWon]
+      .map((v) => `<td>${v ?? 0}</td>`)
+      .join('');
     const sub = this.el.querySelector('#quick-sub');
     sub.dataset.i18n = this.ready ? 'quickSub' : this.failed ? 'loadError' : 'loading';
     sub.textContent = t(sub.dataset.i18n);

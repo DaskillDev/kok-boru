@@ -55,7 +55,8 @@ export async function loadRiderAsset() {
 
 // Перекрашивает белую рубашку на текстуре в цвет команды, сохраняя складки и тени
 function jerseyTexture(team) {
-  if (proto.teamMaps.has(team.id)) return proto.teamMaps.get(team.id);
+  const key = `${team.color}:${team.dark}`;
+  if (proto.teamMaps.has(key)) return proto.teamMaps.get(key);
   const img = proto.image;
   const c = document.createElement('canvas');
   c.width = img.width;
@@ -109,7 +110,7 @@ function jerseyTexture(team) {
   t.colorSpace = THREE.SRGBColorSpace;
   t.flipY = false; // как у текстур glTF
   t.anisotropy = 8;
-  proto.teamMaps.set(team.id, t);
+  proto.teamMaps.set(key, t);
   return t;
 }
 
@@ -153,6 +154,48 @@ function createKalpak() {
   const tassel = new THREE.Mesh(new THREE.SphereGeometry(0.016, 8, 6), mats.black);
   tassel.position.y = 0.212;
   g.add(tassel);
+  g.traverse((o) => {
+    if (o.isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
+// Тебетей: меховой околыш и цветная войлочная тулья — как у современных команд
+function createTebetey() {
+  const g = new THREE.Group();
+  const fur = new THREE.MeshStandardMaterial({ color: 0x1a1512, roughness: 1 });
+  const top = new THREE.MeshStandardMaterial({ color: 0xe9c23a, roughness: 0.8 });
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.05, 10, 28), fur);
+  rim.rotation.x = Math.PI / 2;
+  rim.scale.set(1, 1.12, 1.25);
+  rim.position.y = 0.04;
+  g.add(rim);
+  const crownPts = [[0.11, 0.03], [0.115, 0.09], [0.1, 0.14], [0.06, 0.17], [0.0, 0.18]].map(([r, y]) => new THREE.Vector2(r, y));
+  const crown = new THREE.Mesh(new THREE.LatheGeometry(crownPts, 24), top);
+  crown.scale.set(1, 1, 1.12);
+  g.add(crown);
+  g.traverse((o) => {
+    if (o.isMesh) o.castShadow = true;
+  });
+  return g;
+}
+
+// Защитный шлем
+function createHelmet() {
+  const g = new THREE.Group();
+  const shell = new THREE.Mesh(
+    new THREE.SphereGeometry(0.135, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
+    new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.35, metalness: 0.2 }),
+  );
+  shell.scale.set(1, 1, 1.15);
+  shell.position.y = 0.03;
+  g.add(shell);
+  const visor = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.11, 0.015, 20, 1, false, -Math.PI / 2, Math.PI),
+    new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.5 }),
+  );
+  visor.position.set(0, 0.04, 0.09);
+  g.add(visor);
   g.traverse((o) => {
     if (o.isMesh) o.castShadow = true;
   });
@@ -220,10 +263,11 @@ function numberMaterial(n) {
 const tackMats = new Map();
 // Попона в цветах команды (седло и уздечка — в самой модели коня)
 export function createTack(team) {
-  if (!tackMats.has(team.id)) {
+  const key = `${team.color}:${team.dark}:${team.trim}`;
+  if (!tackMats.has(key)) {
     const trimCss = `#${new THREE.Color(team.trim).getHexString()}`;
     const darkCss = `#${new THREE.Color(team.dark).getHexString()}`;
-    tackMats.set(team.id, {
+    tackMats.set(key, {
       cloth: new THREE.MeshStandardMaterial({ color: team.color, roughness: 0.8, side: THREE.DoubleSide }),
       strip: new THREE.MeshStandardMaterial({
         map: ornamentStripTexture(trimCss, darkCss),
@@ -232,7 +276,7 @@ export function createTack(team) {
       }),
     });
   }
-  const tm = tackMats.get(team.id);
+  const tm = tackMats.get(key);
   const g = new THREE.Group();
   const rx = 0.36;
   const ry = 0.5;
@@ -302,7 +346,14 @@ export class RiderFigure {
     const topLocal = headBone.worldToLocal(this.bones.headTop.getWorldPosition(new THREE.Vector3()));
     holder.position.copy(topLocal);
     headBone.add(holder);
-    const kalpak = createKalpak();
+    this.hats = { kalpak: createKalpak(), tebetey: createTebetey(), helmet: createHelmet() };
+    const kalpak = this.hats.kalpak;
+    this.hats.tebetey.visible = this.hats.helmet.visible = false;
+    for (const k of ['tebetey', 'helmet']) {
+      this.hats[k].position.set(0, -0.115, 0.012);
+      this.hats[k].scale.setScalar(1.07);
+      holder.add(this.hats[k]);
+    }
     kalpak.position.set(0, -0.115, 0.012);
     kalpak.scale.setScalar(1.07);
     kalpak.rotation.x = -0.1;
@@ -470,6 +521,16 @@ export class RiderFigure {
     this._w(B.rArm, X, this._armX);
     this._w(B.rArm, Z, -this._armZ);
     this._w(B.rFore, X, this._foreX);
+  }
+
+  setHat(type) {
+    for (const [k, h] of Object.entries(this.hats)) h.visible = k === (this.hats[type] ? type : 'kalpak');
+  }
+
+  // Перекраска формы под команду (после выбора стран)
+  setTeam(team) {
+    this.mesh.material.map = jerseyTexture(team);
+    this.mesh.material.needsUpdate = true;
   }
 
   playThrow() {

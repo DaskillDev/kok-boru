@@ -21,9 +21,23 @@ const DEFAULTS = {
   camera: 'chase', // chase | tv | top | first
   names: 'all', // all | humans | none
   // быстрый матч
-  quick: { time: 180, difficulty: 'easy', size: 4, weather: 'random', map: 'random' },
+  quick: {
+    time: 180,
+    difficulty: 'easy',
+    size: 4,
+    weather: 'random',
+    map: 'random',
+    draw: 'golden', // golden | draw
+    side: 0, // 0 — синие, 1 — красные
+    opponent: 'KAZ',
+    math: false,
+    mathLevel: 'easy',
+    mathTime: 7,
+  },
+  // всадник игрока
+  rider: { country: 'KGZ', breed: 'kyrgyz', hat: 'kalpak' },
   // локальная статистика (до появления онлайна и аккаунтов)
-  stats: { matches: 0, wins: 0, draws: 0, goals: 0 },
+  stats: { matches: 0, wins: 0, draws: 0, goals: 0, passes: 0, steals: 0, duelsWon: 0 },
   // прогресс: опыт, монеты, купленные масти
   profile: { xp: 0, coins: 0, coat: 'bay', owned: ['bay'] },
 };
@@ -59,6 +73,7 @@ function load() {
       quick: { ...DEFAULTS.quick, ...(raw.quick || {}) },
       stats: { ...DEFAULTS.stats, ...(raw.stats || {}) },
       profile: { ...DEFAULTS.profile, ...(raw.profile || {}) },
+      rider: { ...DEFAULTS.rider, ...(raw.rider || {}) },
     };
   } catch {
     return structuredClone(DEFAULTS);
