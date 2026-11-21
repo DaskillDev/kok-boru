@@ -8,7 +8,7 @@ import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const TARGET_HEIGHT = 2.15; // высота от земли до макушки в стойке, м
 const WALK_REF = 1.9; // скорость (м/с), при которой шаг идёт в темпе 1×
-const GALLOP_REF = 10.5; // то же для галопа
+const GALLOP_REF = 14; // то же для галопа
 
 let proto = null;
 

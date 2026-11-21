@@ -45,9 +45,9 @@ const ROSTER = [
   { teamId: 1, name: 'Адилет', coat: 'grey' },
 ];
 const DIFFICULTY = {
-  easy: { skill: 0.3, speed: 0.9 },
-  medium: { skill: 0.6, speed: 0.97 },
-  hard: { skill: 0.9, speed: 1.03 },
+  easy: { skill: 0.3, speed: 0.85 },
+  medium: { skill: 0.6, speed: 0.94 },
+  hard: { skill: 0.9, speed: 1.0 },
 };
 const MAPS = {
   jailoo: { pitch: 0xffffff, steppe: 0xffffff },

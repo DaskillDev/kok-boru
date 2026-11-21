@@ -3,13 +3,14 @@
 const KEY = 'ulak-tartysh-settings-v1';
 
 const DEFAULTS = {
+  v: 2,
   lang: 'ru',
   nickname: '',
   // управление
   move: 'joystick', // joystick | fixed | touch
   btnSize: 'm', // s | m | l
   leftHanded: false,
-  autoSwitch: true,
+  autoSwitch: false,
   // звук
   volume: 0.8,
   music: 0.4,
@@ -42,6 +43,11 @@ export const levelOf = (xp) => 1 + Math.floor(xp / 250);
 function load() {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) || '{}');
+    // v2: автосмена всадника теперь выключена, пока игрок сам её не включит
+    if (!raw.v || raw.v < 2) {
+      raw.autoSwitch = false;
+      raw.v = 2;
+    }
     return {
       ...DEFAULTS,
       ...raw,

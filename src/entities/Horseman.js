@@ -168,11 +168,11 @@ export class Horseman {
     const staggered = this.stagger > 0;
     this.stagger = Math.max(0, this.stagger - dt);
     // после сильного удара конь на мгновение хуже слушается повода
-    const throttle = staggered ? c.throttle * 0.45 : c.throttle;
-    const steer = staggered ? c.steer * 0.4 : c.steer;
+    const throttle = staggered ? c.throttle * 0.8 : c.throttle;
+    const steer = staggered ? c.steer * 0.75 : c.steer;
 
     // выносливость
-    const wantsSprint = c.sprint && throttle > 0.1 && !this.exhausted && !staggered;
+    const wantsSprint = c.sprint && throttle > 0.1 && !this.exhausted;
     this.sprinting = wantsSprint && this.stamina > 0;
     if (this.sprinting) {
       this.stamina -= STAMINA.drain * dt;
@@ -191,7 +191,7 @@ export class Horseman {
     let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor;
     if (this.hasUlak) max *= HORSE.carrySpeedFactor;
     if (this.charging) max *= 0.85;
-    if (this.inTug) max *= 0.7; // в борьбе за улак кони идут связкой
+    if (this.inTug) max *= 0.85; // в борьбе за улак кони идут связкой
     if (this.exhausted) max *= 0.88; // загнанный конь идёт тяжелее
     let target = 0;
     if (throttle > 0) target = throttle * max;
@@ -212,7 +212,7 @@ export class Horseman {
     // крутой поворот на скорости «съедает» ход
     this.speed -= Math.sign(this.speed) * Math.abs(this.turn) * v * HORSE.turnDrag * dt;
     const targetTurn = steer * turnRate * (this.speed < -0.2 ? -1 : 1);
-    this.turn += (targetTurn - this.turn) * (1 - Math.exp(-dt * 6));
+    this.turn += (targetTurn - this.turn) * (1 - Math.exp(-dt * 11));
     this.heading = wrapPi(this.heading + this.turn * dt);
 
     // продольное ускорение — для посадки всадника и «клевка» коня
@@ -222,7 +222,7 @@ export class Horseman {
     // инерция: вектор скорости «догоняет» направление коня; после удара сцепление падает
     const fx = Math.sin(this.heading) * this.speed;
     const fz = Math.cos(this.heading) * this.speed;
-    const g = 1 - Math.exp(-dt * HORSE.grip * (staggered ? 0.3 : 1));
+    const g = 1 - Math.exp(-dt * HORSE.grip * (staggered ? 0.6 : 1));
     this.vel.x += (fx - this.vel.x) * g;
     this.vel.z += (fz - this.vel.z) * g;
     this.pos.x += this.vel.x * dt;
@@ -246,7 +246,7 @@ export class Horseman {
     const along = this.vel.x * Math.sin(this.heading) + this.vel.z * Math.cos(this.heading);
     this.speed += (THREE.MathUtils.clamp(along, -HORSE.reverseSpeed, this.speed + 2.5) - this.speed) * 0.85;
     if (dv > 1.2) {
-      this.stagger = Math.max(this.stagger, Math.min(0.85, (dv - 1.2) / 5));
+      this.stagger = Math.max(this.stagger, Math.min(0.3, (dv - 1.2) / 12));
       this.jolt = Math.min(1, this.jolt + dv / 5);
     }
     return dv;

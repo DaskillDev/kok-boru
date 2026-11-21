@@ -86,7 +86,7 @@ export class CameraRig {
     if (this.mode === 'tv') return 30;
     if (this.mode === 'top') return 38;
     if (this.mode === 'first') return 74 + (target.sprinting ? 6 : 0);
-    return 58 + (target.sprinting ? 9 : 0) + Math.min(Math.abs(target.speed), 12) * 0.35;
+    return 58 + (target.sprinting ? 9 : 0) + Math.min(Math.abs(target.speed), 16) * 0.4;
   }
 
   _compute(target, ulak) {
@@ -115,7 +115,7 @@ export class CameraRig {
 
   follow(dt, target, ulak) {
     const d = Math.atan2(Math.sin(target.heading - this.yaw), Math.cos(target.heading - this.yaw));
-    this.yaw += d * (1 - Math.exp(-dt * 3.2));
+    this.yaw += d * (1 - Math.exp(-dt * 5));
 
     // ТВ-камера держит в кадре и игрока, и улак
     if (ulak) {

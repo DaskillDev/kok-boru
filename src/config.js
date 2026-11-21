@@ -46,18 +46,18 @@ export function ownKazanX(teamId) {
 }
 
 export const HORSE = {
-  runSpeed: 11.5, // кентер/галоп, м/с
-  sprintSpeed: 17, // карьер
-  reverseSpeed: 1.8,
-  accel: 4.6, // м/с² — до галопа конь разгоняется за 3–4 секунды
-  sprintAccel: 6.2,
-  brake: 7.5,
-  coast: 2.2,
-  turnRateSlow: 1.7, // рад/с — разворот на месте
-  lateralAccel: 13, // м/с² — предел бокового ускорения: чем быстрее, тем шире дуга
-  turnDrag: 0.1, // потеря скорости в крутом повороте
-  grip: 5, // насколько быстро скорость «догоняет» направление (инерция/занос)
-  carrySpeedFactor: 0.8,
+  runSpeed: 15, // галоп, м/с
+  sprintSpeed: 22, // карьер
+  reverseSpeed: 2.5,
+  accel: 9, // м/с² — конь быстро набирает ход
+  sprintAccel: 13,
+  brake: 14,
+  coast: 3,
+  turnRateSlow: 2.8, // рад/с — разворот на месте
+  lateralAccel: 24, // м/с² — предел бокового ускорения: чем быстрее, тем шире дуга
+  turnDrag: 0.05, // потеря скорости в крутом повороте
+  grip: 9, // насколько быстро скорость «догоняет» направление (инерция/занос)
+  carrySpeedFactor: 0.9,
   // тело для столкновений: капсула вдоль корпуса
   bodyHalfLength: 0.95,
   bodyRadius: 0.5,
@@ -68,7 +68,7 @@ export const HORSE = {
 };
 
 export const STAMINA = {
-  drain: 0.32, // в секунду при рывке
+  drain: 0.22, // в секунду при рывке
   regen: 0.14,
   regenIdle: 0.22,
   exhaustedUntil: 0.3, // после полного истощения рывок недоступен до этого уровня
