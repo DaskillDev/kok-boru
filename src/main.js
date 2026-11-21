@@ -39,7 +39,7 @@ import { settings, setSetting, onSettings, isTouchDevice, levelOf } from './ui/s
 import { t, applyI18n } from './ui/i18n.js';
 import {
   applyStage, stageSize, lockLandscape, exitFullscreen, canFullscreen, isFullscreen, isStandalone, isIOS,
-  onFullscreenChange, installTouchTaps,
+  onFullscreenChange, installTouchTaps, setupSwipeFullscreen,
 } from './ui/viewport.js';
 
 // До 4 всадников в команде; в матче участвуют первые N из каждой
@@ -82,12 +82,18 @@ document.body.classList.toggle('touch', touch);
 // Полный экран на телефоне: включается сам при первом касании и при старте матча.
 // Если игрок вышел из него сам — больше не навязываем, пока он не нажмёт кнопку ⛶ или не начнёт матч.
 let wantFull = touch && !isStandalone();
-document.body.classList.toggle('no-fullscreen', !canFullscreen() || isStandalone());
-document.body.classList.toggle('ios-browser', touch && isIOS() && !isStandalone());
+let swipeShown = false;
+// iPhone без полноэкранного режима: вместо него прячем панели Safari свайпом вверх
+const swipeFull = touch && isIOS() && !canFullscreen() && !isStandalone() ? setupSwipeFullscreen() : null;
+document.body.classList.toggle('no-fullscreen', isStandalone() || (!canFullscreen() && !swipeFull));
 function syncFullButtons() {
   for (const b of document.querySelectorAll('#btn-full, #menu-full')) b.classList.toggle('on', isFullscreen());
 }
 function toggleFullscreen() {
+  if (swipeFull) {
+    swipeFull();
+    return;
+  }
   if (isFullscreen()) {
     wantFull = false;
     exitFullscreen();
@@ -748,6 +754,11 @@ function startMatch(cfg) {
   if (touch && !isStandalone()) {
     wantFull = true;
     lockLandscape();
+    // на iPhone один раз за запуск предлагаем убрать панели браузера
+    if (swipeFull && !swipeShown) {
+      swipeShown = true;
+      swipeFull();
+    }
   }
   demo = false;
   player = null;

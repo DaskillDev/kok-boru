@@ -107,11 +107,10 @@ export class Menu {
           </button>
           <span class="spacer"></span>
           <div class="lang">${LANGS.map((l) => `<button data-lang="${l}">${l.toUpperCase()}</button>`).join('')}</div>
-          <button class="icon-btn" data-go="credits" aria-label="credits">ⓘ</button>
-          <button class="icon-btn" id="menu-full" aria-label="fullscreen">⛶</button>
-          <button class="icon-btn" data-go="settings" aria-label="settings">⚙</button>
+          <button class="icon-btn" data-go="credits" aria-label="credits"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v6"/><circle cx="12" cy="7.6" r=".6" fill="currentColor"/></svg></button>
+          <button class="icon-btn" id="menu-full" aria-label="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+          <button class="icon-btn" data-go="settings" aria-label="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v3M12 18.2v3M2.8 12h3M18.2 12h3M5.5 5.5l2.1 2.1M16.4 16.4l2.1 2.1M18.5 5.5l-2.1 2.1M7.6 16.4l-2.1 2.1"/></svg></button>
         </header>
-        <p class="ios-hint" data-i18n="iosHint"></p>
         <div class="hero">
           <h1 data-i18n="title"></h1>
           <div class="ornament"></div>

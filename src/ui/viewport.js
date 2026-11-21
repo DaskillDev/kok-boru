@@ -98,6 +98,33 @@ export function exitFullscreen() {
   }
 }
 
+// iPhone: Safari не даёт сайтам настоящий полный экран, но сам прячет свои панели, когда страницу
+// прокручивают вверх. Делаем страницу чуть выше экрана и просим игрока провести пальцем вверх.
+// Возвращает функцию, которая показывает подсказку.
+export function setupSwipeFullscreen() {
+  const html = document.documentElement;
+  const tip = document.getElementById('swipe-up');
+  let h0 = 0;
+  let timer = 0;
+  const hide = () => {
+    html.classList.remove('swipe-on');
+    clearTimeout(timer);
+  };
+  const check = () => {
+    if (!html.classList.contains('swipe-on')) return;
+    if (window.scrollY > 30 || window.innerHeight > h0 + 24) hide();
+  };
+  window.addEventListener('scroll', check, { passive: true });
+  window.addEventListener('resize', check);
+  tip.addEventListener('click', hide);
+  return () => {
+    html.classList.add('ios-swipe', 'swipe-on');
+    h0 = window.innerHeight;
+    clearTimeout(timer);
+    timer = setTimeout(hide, 9000);
+  };
+}
+
 export function onFullscreenChange(fn) {
   document.addEventListener('fullscreenchange', fn);
   document.addEventListener('webkitfullscreenchange', fn);

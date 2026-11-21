@@ -21,10 +21,10 @@
 
       <div id="hud" class="hidden">
       <div id="hud-buttons">
-        <button id="btn-pause" aria-label="pause">❚❚</button>
-        <button id="btn-full" aria-label="fullscreen">⛶</button>
-        <button id="btn-mute" aria-label="sound">♪</button>
-        <button id="btn-help" aria-label="help">?</button>
+        <button id="btn-pause" aria-label="pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.5 5v14M15.5 5v14" stroke-width="3"/></svg></button>
+        <button id="btn-full" aria-label="fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+        <button id="btn-mute" aria-label="sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z" fill="currentColor"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.5a7.8 7.8 0 0 1 0 11"/></svg></button>
+        <button id="btn-help" aria-label="help"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8.6 9a3.5 3.5 0 1 1 5.2 3c-1.2.7-1.8 1.4-1.8 2.8"/><circle cx="12" cy="18.6" r=".7" fill="currentColor"/></svg></button>
       </div>
       <div id="scoreboard">
         <div class="team team-0"><span class="tname">Көк</span><span id="score0" class="score">0</span></div>
@@ -68,6 +68,9 @@
 
       <div id="menu" class="overlay"></div>
     </div>
+
+    <!-- iPhone: подсказка «проведите вверх», чтобы Safari убрал свои панели -->
+    <div id="swipe-up"><b>⬆</b><span data-i18n="swipeUp"></span><small data-i18n="swipeUpClose"></small></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>
