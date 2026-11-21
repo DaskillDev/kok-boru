@@ -4,6 +4,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { ColorGradeShader } from './grade.js';
 import { fbm2, ridged2, mulberry32 } from './noise.js';
 import { makeNoiseMap, yurtWallTexture } from './textures.js';
 
@@ -27,18 +29,29 @@ export function createPostFX(renderer, scene, camera) {
   const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
+  // затенение в складках и под корпусами (GTAO) — глубина и объём
   const gtao = new GTAOPass(scene, camera, size.x, size.y);
-  gtao.updateGtaoMaterial({ radius: 0.9, distanceExponent: 1.4, thickness: 1.2, scale: 1.15, samples: 12 });
+  gtao.updateGtaoMaterial({ radius: 1.4, distanceExponent: 1.6, thickness: 1.6, scale: 1.35, samples: 16 });
   gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
-  gtao.blendIntensity = 0.85;
+  gtao.blendIntensity = 1.0;
   composer.addPass(gtao);
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.22, 0.7, 6.0);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.28, 0.65, 0.92);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
+  const grade = new ShaderPass(ColorGradeShader);
+  composer.addPass(grade);
   return {
     composer,
+    grade,
     enabled: true,
-    render() {
+    // high — всё; medium — без GTAO; low — прямой рендер без постобработки
+    setLevel(level) {
+      this.enabled = level !== 'low';
+      gtao.enabled = level === 'high';
+      bloom.enabled = level === 'high';
+    },
+    render(time = 0) {
+      grade.uniforms.uTime.value = time % 100;
       if (this.enabled) composer.render();
       else renderer.render(scene, camera);
     },
@@ -48,35 +61,45 @@ export function createPostFX(renderer, scene, camera) {
   };
 }
 
-// HDRI-небо как фон и источник отражений, солнце по положению на HDRI, туман в цвет горизонта
 export function createEnvironment(scene, assets) {
   const { sky, skyInfo } = assets;
   scene.background = sky;
   scene.environment = sky;
-  scene.environmentIntensity = 0.9;
+  scene.environmentIntensity = 0.6;
   scene.backgroundIntensity = 1;
 
   const sunDir = skyInfo.sunDir.clone();
   scene.fog = new THREE.FogExp2(skyInfo.horizon.clone().multiplyScalar(0.82), 0.00095);
 
-  const sun = new THREE.DirectionalLight(0xfff2de, 3.6);
+  const sun = new THREE.DirectionalLight(0xffe6c2, 4.3);
   sun.position.copy(sunDir).multiplyScalar(200);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
   const sc = sun.shadow.camera;
-  sc.left = -130;
-  sc.right = 130;
-  sc.top = 130;
-  sc.bottom = -130;
-  sc.near = 20;
+  // теневая «коробка» 84 × 84 м следует за камерой: ~2 см на тексель — чёткие тени у всадников
+  const R = 42;
+  sc.left = -R;
+  sc.right = R;
+  sc.top = R;
+  sc.bottom = -R;
+  sc.near = 10;
   sc.far = 420;
-  sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.05;
-  sun.shadow.radius = 3;
+  sun.shadow.bias = -0.00025;
+  sun.shadow.normalBias = 0.025;
+  sun.shadow.radius = 2.2;
   scene.add(sun);
   scene.add(sun.target);
 
-  return { sun, sunDir, fogColor: scene.fog.color.clone() };
+  const texel = (R * 2) / 4096;
+  const _f = new THREE.Vector3();
+  // привязка к сетке текселей — тени не «дрожат» при движении камеры
+  function followShadow(focus) {
+    _f.set(Math.round(focus.x / texel) * texel, 0, Math.round(focus.z / texel) * texel);
+    sun.target.position.copy(_f);
+    sun.position.copy(_f).addScaledVector(sunDir, 200);
+  }
+
+  return { sun, sunDir, fogColor: scene.fog.color.clone(), followShadow };
 }
 
 // Бескрайняя степь вокруг поля
@@ -310,10 +333,10 @@ export { makeNoiseMap };
 
 // Погода: меняет свет, дымку и экспозицию поверх одного и того же HDRI-неба
 const WEATHER = {
-  clear: { sun: 3.6, sunColor: 0xfff2de, env: 0.9, bg: 1.0, fog: 0.00095, fogTint: [1, 1, 1], exposure: 0.64 },
-  overcast: { sun: 1.1, sunColor: 0xe8eef6, env: 1.25, bg: 0.72, fog: 0.0024, fogTint: [0.82, 0.86, 0.92], exposure: 0.6 },
-  evening: { sun: 2.7, sunColor: 0xffa860, env: 0.6, bg: 0.6, fog: 0.0015, fogTint: [1.0, 0.72, 0.52], exposure: 0.66 },
-  fog: { sun: 1.5, sunColor: 0xf4f0e8, env: 1.1, bg: 0.9, fog: 0.007, fogTint: [0.95, 0.96, 0.98], exposure: 0.62 },
+  clear: { sun: 4.3, sunColor: 0xffe6c2, env: 0.6, bg: 1.0, fog: 0.0011, fogTint: [1, 0.98, 0.95], exposure: 0.66 },
+  overcast: { sun: 1.3, sunColor: 0xe6eef8, env: 1.15, bg: 0.72, fog: 0.0024, fogTint: [0.82, 0.86, 0.92], exposure: 0.62 },
+  evening: { sun: 3.4, sunColor: 0xff9f55, env: 0.45, bg: 0.6, fog: 0.0016, fogTint: [1.0, 0.72, 0.52], exposure: 0.7 },
+  fog: { sun: 1.6, sunColor: 0xf4f0e8, env: 1.0, bg: 0.9, fog: 0.007, fogTint: [0.95, 0.96, 0.98], exposure: 0.64 },
 };
 export const WEATHER_IDS = Object.keys(WEATHER);
 

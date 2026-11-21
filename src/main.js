@@ -15,7 +15,7 @@ import {
   WEATHER_IDS,
 } from './scene/environment.js';
 import { loadAssets } from './scene/assets.js';
-import { createField, kazanCollisionMesh } from './scene/field.js';
+import { createField, kazanCollisionMesh, createFieldGrass } from './scene/field.js';
 import { Dust } from './scene/Dust.js';
 import { createArena } from './scene/arena.js';
 import { initPhysics, PhysicsWorld } from './physics/PhysicsWorld.js';
@@ -125,6 +125,8 @@ let env = null;
 let field = null;
 let steppe = null;
 let tufts = null;
+let fieldGrass = null;
+let mapIsSand = false;
 let arena = null;
 let demo = false; // на фоне меню боты играют показательный матч
 const _goalCam = new THREE.Vector3();
@@ -167,9 +169,10 @@ const playerName = () => settings.nickname || t('you');
 function applyQuality() {
   let q = settings.quality;
   if (q === 'auto') q = touch ? 'low' : autoLevel;
-  postfx.enabled = q === 'high';
+  postfx.setLevel(q);
   if (env) env.sun.castShadow = q !== 'low';
   if (tufts) tufts.visible = q !== 'low';
+  if (fieldGrass) fieldGrass.mesh.visible = q === 'high' && !mapIsSand;
   if (arena) arena.setVisible(q !== 'low' || !touch);
   renderer.setPixelRatio(q === 'low' ? 1 : Math.min(window.devicePixelRatio, q === 'medium' ? 1.5 : 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
@@ -233,6 +236,8 @@ function applyMap(id) {
   pm.color.set(m.sand ? 0xffffff : m.pitch);
   pm.normalScale.setScalar(m.sand ? 0.5 : 1.6);
   field.group.userData.overlay.visible = !m.sand; // на песке нет полос покоса
+  mapIsSand = !!m.sand;
+  applyQuality();
   steppe.material.color.set(m.steppe);
 }
 
@@ -343,6 +348,7 @@ async function init() {
   const yurts = createYurts(scene);
   field = createField(scene, assets);
   arena = createArena(scene);
+  fieldGrass = createFieldGrass(scene);
   tufts = createGrassTufts(scene, (x, z) => {
     if (Math.abs(x) < FIELD.length / 2 + 9 && Math.abs(z) < FIELD.width / 2 + 9) return true;
     return yurts.some((y) => Math.hypot(y.position.x - x, y.position.z - z) < 4.5);
@@ -908,7 +914,9 @@ function frame(now) {
     );
   }
   hud.update(dt);
-  postfx.render();
+  if (env) env.followShadow(rig.mode === 'tv' || rig.mode === 'top' ? rig.focus : player ? player.pos : ORIGIN);
+  if (fieldGrass) fieldGrass.update(time);
+  postfx.render(time);
 }
 
 window.addEventListener('resize', () => {

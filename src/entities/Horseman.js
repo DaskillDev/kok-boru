@@ -43,6 +43,27 @@ function makeNameTag(text, css) {
 }
 
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+
+const BLOB_GEO = new THREE.PlaneGeometry(1, 1);
+const BLOB_MAT = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const ctx = c.getContext('2d');
+  const g = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
+  g.addColorStop(0, 'rgba(0,0,0,0.55)');
+  g.addColorStop(0.5, 'rgba(0,0,0,0.28)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 128, 128);
+  return new THREE.MeshBasicMaterial({
+    map: new THREE.CanvasTexture(c),
+    transparent: true,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
+  });
+})();
 const UP = new THREE.Vector3(0, 1, 0);
 const _hand = new THREE.Vector3();
 const _bit = new THREE.Vector3();
@@ -118,6 +139,14 @@ export class Horseman {
     this.carryAnchor = new THREE.Object3D();
     this.carryAnchor.position.set(-0.6, -0.5, 0.05);
     this.seat.add(this.carryAnchor);
+
+    // мягкое тёмное пятно под конём: «сажает» его на землю даже вне теневой коробки
+    this.blob = new THREE.Mesh(BLOB_GEO, BLOB_MAT);
+    this.blob.rotation.x = -Math.PI / 2;
+    this.blob.position.y = 0.035;
+    this.blob.scale.set(1.25, 2.6, 1);
+    this.blob.renderOrder = 1;
+    this.group.add(this.blob);
 
     // кольцо под всадником, которым управляет игрок
     this.ring = new THREE.Mesh(

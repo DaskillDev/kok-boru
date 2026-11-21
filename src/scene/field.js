@@ -317,3 +317,90 @@ export function createField(scene, assets) {
 
   return { group, update, setSides };
 }
+
+// Живая трава на поле: пучки (InstancedMesh), качаются от ветра в вершинном шейдере
+export function createFieldGrass(scene) {
+  const blade = new THREE.PlaneGeometry(0.018, 0.2, 1, 2);
+  blade.translate(0, 0.1, 0);
+  const parts = [];
+  for (let i = 0; i < 9; i++) {
+    const b = blade.clone();
+    const pos = b.attributes.position;
+    // изгиб травинки
+    for (let k = 0; k < pos.count; k++) {
+      const y = pos.getY(k);
+      pos.setZ(k, pos.getZ(k) + y * y * 1.2);
+      pos.setX(k, pos.getX(k) * (1 - y * 3.5)); // к кончику травинка сужается
+    }
+    b.rotateY((i / 9) * Math.PI * 2 + Math.random());
+    b.rotateZ((Math.random() - 0.5) * 0.4);
+    b.scale(1, 0.6 + Math.random() * 0.7, 1);
+    b.translate((Math.random() - 0.5) * 0.3, 0, (Math.random() - 0.5) * 0.3);
+    parts.push(b.toNonIndexed());
+  }
+  const pos = [];
+  const nor = [];
+  for (const g of parts) {
+    g.computeVertexNormals();
+    pos.push(...g.attributes.position.array);
+    nor.push(...g.attributes.normal.array);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  // нормали «вверх» — трава освещается как газон, без чёрных изнанок
+  const up = new Float32Array(pos.length);
+  for (let i = 0; i < up.length; i += 3) up[i + 1] = 1;
+  geo.setAttribute('normal', new THREE.BufferAttribute(up, 3));
+
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, side: THREE.DoubleSide });
+  const uTime = { value: 0 };
+  mat.onBeforeCompile = (sh) => {
+    sh.uniforms.uTime = uTime;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;')
+      .replace(
+        '#include <begin_vertex>',
+        `#include <begin_vertex>
+        vec4 ip = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+        float w = sin(uTime * 1.7 + ip.x * 0.35 + ip.z * 0.21) + 0.5 * sin(uTime * 3.1 + ip.x * 0.9);
+        transformed.x += w * 0.05 * transformed.y * transformed.y * 25.0;
+        transformed.z += w * 0.025 * transformed.y * transformed.y * 25.0;`,
+      );
+  };
+
+  const L = FIELD.length + 14;
+  const W = FIELD.width + 14;
+  const count = 34000;
+  const mesh = new THREE.InstancedMesh(geo, mat, count);
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const sc = new THREE.Vector3();
+  const p = new THREE.Vector3();
+  const c = new THREE.Color();
+  let n = 0;
+  while (n < count) {
+    p.set((Math.random() - 0.5) * L, 0, (Math.random() - 0.5) * W);
+    // не растёт в казанах
+    if (Math.min(Math.hypot(p.x - KAZAN.x, p.z), Math.hypot(p.x + KAZAN.x, p.z)) < KAZAN.outerR + 0.3) continue;
+    q.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, Math.random() * 6.28);
+    const k = 0.8 + Math.random() * 0.6;
+    sc.set(k, k * (0.7 + Math.random() * 0.6), k);
+    m.compose(p, q, sc);
+    mesh.setMatrixAt(n, m);
+    const v = fbm2(p.x * 0.05, p.z * 0.05, 3, 4);
+    c.setHSL(0.2 + v * 0.06, 0.45 + v * 0.15, 0.36 + v * 0.16);
+    mesh.setColorAt(n, c);
+    n++;
+  }
+  mesh.instanceMatrix.needsUpdate = true;
+  mesh.receiveShadow = true;
+  mesh.castShadow = false;
+  mesh.frustumCulled = false;
+  scene.add(mesh);
+  return {
+    mesh,
+    update(time) {
+      uTime.value = time;
+    },
+  };
+}
