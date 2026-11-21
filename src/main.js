@@ -75,9 +75,11 @@ const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6, expert: 2 };
 const touch = isTouchDevice();
 applyStage(touch);
 // браузер разрешает звук только после первого касания или клавиши — тогда и включаем музыку
-const firstGesture = () => audio.unlock();
-window.addEventListener('pointerdown', firstGesture, { once: true });
-window.addEventListener('keydown', firstGesture, { once: true });
+// (и возобновляем после каждого сбоя: телефон глушит звук при сворачивании, звонке, уведомлении)
+const wakeAudio = () => audio.unlock();
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) {
+  window.addEventListener(ev, wakeAudio, { capture: true, passive: true });
+}
 document.body.classList.toggle('touch', touch);
 // Полный экран на телефоне: включается сам при первом касании и при старте матча.
 // Если игрок вышел из него сам — больше не навязываем, пока он не нажмёт кнопку ⛶ или не начнёт матч.
@@ -1014,7 +1016,12 @@ window.addEventListener('resize', () => {
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden && inMatch() && !paused) togglePause();
+  // свернули — звук на паузу; вернулись — пробуем включить (если браузер не даст, включится при касании)
+  if (document.hidden) audio.sleep();
+  else audio.unlock();
 });
+window.addEventListener('pageshow', () => audio.unlock());
+window.addEventListener('focus', () => audio.unlock());
 
 requestAnimationFrame(frame);
 init().catch((e) => {

@@ -63,11 +63,19 @@ export class GameAudio {
   // Вызывать по жесту пользователя (клик/касание) — иначе браузер не даст звук
   unlock() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      // На телефоне система глушит звук при сворачивании браузера, звонке, уведомлении
+      // (состояние 'suspended' или, на iPhone, 'interrupted') — возобновляем при любом касании.
+      if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
+    // iPhone: звук игры идёт как «воспроизведение» — не глушится переключателем беззвучного режима
+    try {
+      if (navigator.audioSession) navigator.audioSession.type = 'playback';
+    } catch {
+      // старые версии iOS этого не умеют
+    }
     this.ctx = new AC();
     this.master = this.ctx.createGain();
     this.sfx = this.ctx.createGain();
@@ -88,6 +96,12 @@ export class GameAudio {
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this._applyVolumes();
     this.loaded = this._load().then(() => this._startMusic());
+  }
+
+  // Браузер свернули: сами ставим звук на паузу. Иначе iPhone после возврата иногда оставляет
+  // звук «включённым», но немым — а после явной паузы он честно возобновляется при касании.
+  sleep() {
+    if (this.ctx && this.ctx.state === 'running') this.ctx.suspend().catch(() => {});
   }
 
   async _load() {
