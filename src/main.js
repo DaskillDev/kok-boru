@@ -407,18 +407,35 @@ async function init() {
     menu.setProgress((done.horse * weight.horse + done.sky * weight.sky + done.rider * weight.rider) / 9.6);
   };
   const [assets] = await Promise.all([loadAssets(part('sky')), loadHorseAsset(part('horse')), loadRiderAsset(part('rider')), initPhysics()]);
+  // замер: сколько ушло на скачивание и разбор файлов, а сколько — на подготовку сцены
+  const tLoaded = performance.now();
+  // сколько миллисекунд занял каждый шаг подготовки сцены (window.__steps) — для поиска узких мест
+  const steps = (window.__steps = {});
+  let tStep = tLoaded;
+  const step = (name) => {
+    const now = performance.now();
+    steps[name] = Math.round(now - tStep);
+    tStep = now;
+  };
 
   env = createEnvironment(scene, assets);
   steppe = createSteppe(scene, assets);
+  step('env');
   createMountains(scene);
+  step('mountains');
   const yurts = createYurts(scene);
+  step('yurts');
   field = createField(scene, assets);
+  step('field');
   arena = createArena(scene);
+  step('arena');
   fieldGrass = createFieldGrass(scene);
+  step('fieldGrass');
   tufts = createGrassTufts(scene, (x, z) => {
     if (Math.abs(x) < FIELD.length / 2 + 9 && Math.abs(z) < FIELD.width / 2 + 9) return true;
     return yurts.some((y) => Math.hypot(y.position.x - x, y.position.z - z) < 4.5);
   });
+  step('tufts');
 
   physics = new PhysicsWorld(kazanCollisionMesh());
   const slots = [0, 0];
@@ -438,6 +455,7 @@ async function init() {
   });
   brains = riders.map((r) => new BotBrain(r, 0.6));
   ulak = new Ulak(scene, physics);
+  step('riders');
 
   match = new Match({
     riders,
@@ -618,7 +636,10 @@ async function init() {
   document.getElementById('btn-full').addEventListener('click', toggleFullscreen);
   document.getElementById('menu-full')?.addEventListener('click', toggleFullscreen);
 
+  step('rest');
   menu.setReady(true);
+  window.__timing = { files: Math.round(tLoaded) / 1000, scene: Math.round(performance.now() - tLoaded) / 1000 };
+  menu.setTiming(window.__timing);
   releaseAudio();
   // для отладки и будущих тестов
   window.__game = {

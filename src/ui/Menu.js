@@ -446,6 +446,12 @@ export class Menu {
     sub.textContent = t(sub.dataset.i18n) + (!this.ready && !this.failed && this.progress ? ` ${Math.round(this.progress * 100)}%` : '');
   }
 
+  // Время загрузки рядом с меткой версии: файлы + подготовка сцены, в секундах (для диагностики)
+  setTiming(tm) {
+    const el = this.el.querySelector('.build');
+    if (el) el.textContent = `v ${__BUILD__} · ${tm.files.toFixed(1)} + ${tm.scene.toFixed(1)} s`;
+  }
+
   // Ход загрузки (0..1) — показывается на плитке «Быстрый матч»
   setProgress(p) {
     this.progress = Math.max(this.progress || 0, Math.min(1, p));

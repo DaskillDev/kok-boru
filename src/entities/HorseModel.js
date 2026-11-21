@@ -93,6 +93,8 @@ const _v = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 
+let blanketGeo = null; // общая для всех коней форма попоны (в координатах кости таза)
+
 export class HorseModel {
   constructor(coat = 'bay') {
     if (!proto) throw new Error('Horse asset is not loaded');
@@ -193,6 +195,20 @@ export class HorseModel {
     });
     if (!body.length) return;
     const pelvis = findBone(this.model, 'BN_Pelvis') || this.spineBack;
+    // Форма попоны у всех коней одна (та же модель, та же поза), поэтому считаем её один раз.
+    // Раньше 230 лучей по скелетной модели пускались для каждого коня — 1,5–2 секунды на всадника,
+    // из-за этого игра после скачивания ещё долго «готовилась».
+    const attach = (geo) => {
+      this.blanket = new THREE.Mesh(geo, material);
+      this.blanket.castShadow = true;
+      this.blanket.receiveShadow = true;
+      this.blanket.frustumCulled = false;
+      pelvis.add(this.blanket);
+    };
+    if (blanketGeo) {
+      attach(blanketGeo);
+      return;
+    }
 
     // поза покоя (стойка) для замера
     for (const [k, a] of Object.entries(this.actions)) a.setEffectiveWeight(k === 'idle' ? 1 : 0);
@@ -201,11 +217,31 @@ export class HorseModel {
     this.mixer.update(0);
     this.mesh.updateMatrixWorld(true);
 
+    // «Слепок» тела в позе покоя: обычная сетка без скелета. Луч по скелетной модели пересчитывает
+    // кости для каждой вершины заново (сотни тысяч раз на луч) — по слепку то же самое в десятки раз быстрее.
+    const _p = new THREE.Vector3();
+    const cast = body.map((o) => {
+      const src = o.geometry;
+      const count = src.attributes.position.count;
+      const arr = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        o.getVertexPosition(i, _p).applyMatrix4(o.matrixWorld);
+        arr[i * 3] = _p.x;
+        arr[i * 3 + 1] = _p.y;
+        arr[i * 3 + 2] = _p.z;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      g.setIndex(src.index);
+      const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: o.material.side }));
+      m.updateMatrixWorld(true);
+      return m;
+    });
     const ray = new THREE.Raycaster();
     const hit = (origin, dir) => {
       ray.set(origin, dir);
       ray.far = 3;
-      const h = ray.intersectObjects(body, false)[0];
+      const h = ray.intersectObjects(cast, false)[0];
       return h || null;
     };
     // высота спины над серединой крупа
@@ -268,11 +304,12 @@ export class HorseModel {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     g.setIndex(idx);
     g.computeVertexNormals();
-    this.blanket = new THREE.Mesh(g, material);
-    this.blanket.castShadow = true;
-    this.blanket.receiveShadow = true;
-    this.blanket.frustumCulled = false;
-    pelvis.add(this.blanket);
+    blanketGeo = g;
+    attach(g);
+    for (const m of cast) {
+      m.geometry.dispose();
+      m.material.dispose();
+    }
 
     this.actions.idle.time = keepT;
     for (const [k, a] of Object.entries(this.actions)) a.setEffectiveWeight(this.weights[k] ?? 0);
