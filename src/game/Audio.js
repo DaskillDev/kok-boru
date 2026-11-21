@@ -3,8 +3,9 @@ import { settings, onSettings } from '../ui/settings.js';
 // Звук игры.
 // Записи (CC0 / public domain, см. CREDITS.md): рысь коня, ржание, ликование и гул трибун,
 // недовольный гул, «у-у-у» разочарования, аплодисменты, свисток судьи, свист броска.
+// Музыка: запись игры на комузе (CC BY 3.0, Nurlan Shantayev), играет по кругу в меню и в матче.
 // Синтез (Web Audio): выкрики всадников (формантный синтез голоса), удары, подбор улака,
-// отсчёт, музыка. Звуки на поле позиционируются: громкость и панорама — от камеры.
+// отсчёт; синтезированная мелодия — только если запись не загрузилась. Звуки на поле позиционируются: громкость и панорама — от камеры.
 
 const PENTA = [220, 261.63, 293.66, 329.63, 392, 440, 523.25, 587.33];
 
@@ -19,6 +20,7 @@ const SAMPLES = {
   crowd: 'crowd_shouting_0.ogg',
   whistle: 'whistle.wav',
   whoosh: 'whoosh2_0.wav',
+  komuz: '../music/komuz.wav',
 };
 
 // Форманты гласных (Гц) для синтеза выкриков
@@ -52,8 +54,9 @@ export class GameAudio {
     this._listener = { x: 0, z: 0, rx: 1, rz: 0 };
     this._neighT = 0;
     this._crowdLevel = 0.12;
+    this.musicMode = 'menu'; // menu | match — у каждого своя громкость
     onSettings((key) => {
-      if (key === 'volume' || key === 'music' || key === 'sfx') this._applyVolumes();
+      if (key === 'volume' || key === 'music' || key === 'musicMatch' || key === 'sfx') this._applyVolumes();
     });
   }
 
@@ -84,8 +87,7 @@ export class GameAudio {
     const d = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this._applyVolumes();
-    this._startMusic();
-    this.loaded = this._load();
+    this.loaded = this._load().then(() => this._startMusic());
   }
 
   async _load() {
@@ -108,7 +110,14 @@ export class GameAudio {
     this.master.gain.value = this.muted ? 0 : settings.volume;
     this.sfx.gain.value = settings.sfx;
     this.crowdBus.gain.value = settings.sfx;
-    this.music.gain.value = settings.music * 0.35;
+    const mv = this.musicMode === 'match' ? settings.musicMatch : settings.music;
+    this.music.gain.setTargetAtTime(mv * 0.9, this.ctx.currentTime, 0.4);
+  }
+
+  // Громкость музыки зависит от того, где игрок: в меню или в матче
+  setMusicMode(mode) {
+    this.musicMode = mode;
+    this._applyVolumes();
   }
 
   toggleMute() {
@@ -425,8 +434,17 @@ export class GameAudio {
     if (settings.vibration && navigator.vibrate && navigator.userActivation?.hasBeenActive) navigator.vibrate(pattern);
   }
 
-  // Фоновая мелодия: щипки в ля-минорной пентатонике (похоже на комуз)
+  // Фоновая музыка: запись комуза по кругу; если её нет — синтезированная мелодия
   _startMusic() {
+    if (this.buf.komuz) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.buf.komuz;
+      src.loop = true;
+      src.connect(this.music);
+      src.start();
+      this._musicSrc = src;
+      return;
+    }
     const bar = [0, 2, 4, 2, 5, 4, 2, 1, 0, 2, 4, 6, 5, 4, 2, 0];
     const tick = () => {
       if (!this.ctx || this.ctx.state !== 'running') return;

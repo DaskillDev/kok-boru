@@ -31,6 +31,12 @@
 | `public/sounds/boo.wav` | Недовольный гул зрителей | «Soundgoats - Audience Booing.wav», Wikimedia Commons | Public domain |
 | `public/sounds/whistle.wav` | Свисток судьи | «218318 splicesound referee-whistle-blow-gymnasium.wav», Wikimedia Commons (splicesound) | CC0 |
 
+## Музыка
+
+| Файл | Что это | Автор / источник | Лицензия |
+| --- | --- | --- | --- |
+| `public/music/komuz.wav` | Игра на кыргызском комузе (звуковая дорожка видео, обрезана и закольцована, моно 22 кГц) | Nurlan Shantayev, «Kyrgyz Komuz. Philadelphia, PA, USA - 1 Minute Story NS», https://commons.wikimedia.org/wiki/File:Kyrgyz_Komuz._Philadelphia,_PA,_USA_-_1_Minute_Story_NS.webm (оригинал — YouTube 0GVW0YzE5W0) | CC BY 3.0 — указание автора обязательно |
+
 Выкрики всадников, удары, подбор улака, отсчёт и музыка синтезируются кодом (`src/game/Audio.js`).
 
 Всё остальное — калпак, попона, улак, казаны, юрты, горы, трава,

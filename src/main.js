@@ -65,6 +65,10 @@ const REWARD = { win: [100, 50], draw: [60, 25], lose: [40, 15], goal: [15, 10] 
 const REWARD_MULT = { easy: 1, medium: 1.3, hard: 1.6, expert: 2 };
 
 const touch = isTouchDevice();
+// браузер разрешает звук только после первого касания или клавиши — тогда и включаем музыку
+const firstGesture = () => audio.unlock();
+window.addEventListener('pointerdown', firstGesture, { once: true });
+window.addEventListener('keydown', firstGesture, { once: true });
 document.body.classList.toggle('touch', touch);
 applyI18n();
 
@@ -673,6 +677,7 @@ function startDemo() {
   for (const r of riders) r.tag.visible = false;
   ulakArrow.classList.remove('on');
   audio.ambience(false);
+  audio.setMusicMode('menu');
 }
 
 function startMatch(cfg) {
@@ -705,6 +710,7 @@ function startMatch(cfg) {
 
   setupRoster(cfg.size);
   match.configure(match.riders, cfg.time);
+  audio.setMusicMode('match');
   matchGoals = 0;
   match.goldenGoal = cfg.draw !== 'draw';
   match.start();
@@ -769,6 +775,7 @@ function finishMatch(score) {
   const levelUp = levelOf(pr.xp + xp) > levelBefore ? ` · ${t('level')} ${levelOf(pr.xp + xp)}!` : '';
   audio.whistle();
   audio.ambience(false);
+  audio.setMusicMode('menu');
   hud.showBanner('');
   touchControls.setVisible(false);
   menu.inMatch = false;

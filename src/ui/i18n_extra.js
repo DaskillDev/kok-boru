@@ -4,6 +4,9 @@
 
 export const EXTRA = {
   ru: {
+    musicMenu: 'Музыка в меню',
+    musicMatch: 'Музыка во время матча',
+    musicCredit: 'Музыка: кыргызский комуз — запись Nurlan Shantayev (CC BY 3.0).',
     riderTitle: 'Всадник',
     riderSub: 'Страна, имя, головной убор',
     horseTitle: 'Конь',
@@ -63,6 +66,9 @@ export const EXTRA = {
     scoreboardEmblem: 'КӨК БӨРҮ · КОК-БОРУ · KOK-BORU',
   },
   kg: {
+    musicMenu: 'Менюдагы музыка',
+    musicMatch: 'Оюн учурундагы музыка',
+    musicCredit: 'Музыка: кыргыз комузу — Nurlan Shantayev жазуусу (CC BY 3.0).',
     riderTitle: 'Чабандес',
     riderSub: 'Өлкө, аты, баш кийим',
     horseTitle: 'Ат',
@@ -122,6 +128,9 @@ export const EXTRA = {
     scoreboardEmblem: 'КӨК БӨРҮ · КОК-БОРУ · KOK-BORU',
   },
   en: {
+    musicMenu: 'Menu music',
+    musicMatch: 'In-match music',
+    musicCredit: 'Music: Kyrgyz komuz, recording by Nurlan Shantayev (CC BY 3.0).',
     riderTitle: 'Rider',
     riderSub: 'Country, name, headwear',
     horseTitle: 'Horse',

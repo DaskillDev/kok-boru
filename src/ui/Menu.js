@@ -49,7 +49,9 @@ const SETTINGS_TABS = {
   ],
   sound: [
     { type: 'range', key: 'volume', label: 'volume' },
-    { type: 'range', key: 'music', label: 'music' },
+    { type: 'range', key: 'music', label: 'musicMenu' },
+    { type: 'range', key: 'musicMatch', label: 'musicMatch' },
+    { type: 'note', label: 'musicCredit' },
     { type: 'range', key: 'sfx', label: 'sfx' },
     { type: 'toggle', key: 'vibration', label: 'vibration' },
   ],
@@ -359,6 +361,7 @@ export class Menu {
           return `<div class="field inline"><h4 data-i18n="${c.label}"></h4><button class="toggle" data-toggle="${c.key}"><i></i></button></div>`;
         if (c.type === 'range')
           return `<div class="field inline"><h4 data-i18n="${c.label}"></h4><input type="range" min="0" max="1" step="0.05" data-range="${c.key}"></div>`;
+        if (c.type === 'note') return `<p class="note" data-i18n="${c.label}"></p>`;
         if (c.type === 'help')
           return `<div class="field"><h4 data-i18n="help"></h4><ul class="help">${HELP_KEYS.map((k) => `<li data-i18n="${k}"></li>`).join('')}</ul></div>`;
         return `<div class="field account">

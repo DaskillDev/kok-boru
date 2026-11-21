@@ -3,7 +3,7 @@
 const KEY = 'ulak-tartysh-settings-v1';
 
 const DEFAULTS = {
-  v: 3,
+  v: 4,
   lang: 'ru',
   nickname: '',
   // управление
@@ -13,7 +13,8 @@ const DEFAULTS = {
   autoSwitch: false,
   // звук
   volume: 0.8,
-  music: 0.4,
+  music: 0.6, // музыка в меню
+  musicMatch: 0.25, // музыка во время матча
   sfx: 1,
   vibration: true,
   // экран
@@ -66,6 +67,12 @@ function load() {
     if (raw.v < 3) {
       raw.quick = { ...(raw.quick || {}), time: 180, size: 4 };
       raw.v = 3;
+    }
+    // v4: вместо синтезированной мелодии — запись комуза; включаем музыку заново
+    if (raw.v < 4) {
+      raw.music = 0.6;
+      raw.musicMatch = 0.25;
+      raw.v = 4;
     }
     return {
       ...DEFAULTS,
