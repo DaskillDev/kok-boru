@@ -93,7 +93,7 @@ function analyzeSky(tex) {
 
 export async function loadAssets(onProgress) {
   const [sky, diff, nor, rough] = await Promise.all([
-    new HDRLoader().loadAsync(`${base}textures/sky_2k.hdr`, onProgress),
+    new HDRLoader().loadAsync(`${base}textures/sky_1k.hdr`, onProgress),
     loadImage(`${base}textures/grass_diff.jpg`),
     new THREE.TextureLoader().loadAsync(`${base}textures/grass_nor.jpg`),
     new THREE.TextureLoader().loadAsync(`${base}textures/grass_rough.jpg`),

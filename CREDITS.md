@@ -19,7 +19,7 @@
 
 | Файл | Что это | Источник | Лицензия |
 | --- | --- | --- | --- |
-| `public/textures/sky_2k.hdr` | HDRI-небо «Kloofendal 48d Partly Cloudy (Pure Sky)» | https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky | CC0 |
+| `public/textures/sky_1k.hdr` | HDRI-небо «Kloofendal 48d Partly Cloudy (Pure Sky)», уменьшено до 1024×512 для быстрой загрузки | https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky | CC0 |
 | `public/textures/grass_diff.jpg`, `grass_nor.jpg`, `grass_rough.jpg` | PBR-текстура травы «Sparse Grass» (цвет перекрашивается кодом) | https://polyhaven.com/a/sparse_grass | CC0 |
 
 ## Звуки
