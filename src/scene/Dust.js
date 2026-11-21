@@ -68,6 +68,27 @@ export class Dust {
     this.acc.set(rider, a);
   }
 
+  // Облако пыли от удара
+  burst(x, z, count = 14, spread = 2.4) {
+    for (let k = 0; k < count; k++) {
+      const i = this.next;
+      this.next = (this.next + 1) % MAX;
+      const a = Math.random() * Math.PI * 2;
+      const sp = Math.random() * spread;
+      this.pos[i * 3] = x + Math.cos(a) * 0.3;
+      this.pos[i * 3 + 1] = 0.3 + Math.random() * 0.9;
+      this.pos[i * 3 + 2] = z + Math.sin(a) * 0.3;
+      this.vel[i * 3] = Math.cos(a) * sp;
+      this.vel[i * 3 + 1] = 0.6 + Math.random() * 1.4;
+      this.vel[i * 3 + 2] = Math.sin(a) * sp;
+      this.life[i] = this.maxLife[i] = 0.6 + Math.random() * 0.6;
+      const shade = 0.55 + Math.random() * 0.15;
+      this.col[i * 4] = shade * 1.05;
+      this.col[i * 4 + 1] = shade * 0.95;
+      this.col[i * 4 + 2] = shade * 0.72;
+    }
+  }
+
   update(dt) {
     for (let i = 0; i < MAX; i++) {
       if (this.life[i] <= 0) continue;

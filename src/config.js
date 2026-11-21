@@ -46,19 +46,25 @@ export function ownKazanX(teamId) {
 }
 
 export const HORSE = {
-  runSpeed: 11.5,
-  sprintSpeed: 17,
-  reverseSpeed: 3,
-  accel: 6.5,
-  sprintAccel: 10,
-  brake: 10,
-  coast: 3.5,
-  turnRateSlow: 2.3, // рад/с на месте
-  lateralAccel: 15, // м/с² — предел бокового ускорения: чем быстрее, тем шире дуга
+  runSpeed: 11.5, // кентер/галоп, м/с
+  sprintSpeed: 17, // карьер
+  reverseSpeed: 1.8,
+  accel: 4.6, // м/с² — до галопа конь разгоняется за 3–4 секунды
+  sprintAccel: 6.2,
+  brake: 7.5,
+  coast: 2.2,
+  turnRateSlow: 1.7, // рад/с — разворот на месте
+  lateralAccel: 13, // м/с² — предел бокового ускорения: чем быстрее, тем шире дуга
   turnDrag: 0.1, // потеря скорости в крутом повороте
-  grip: 4.5, // насколько быстро скорость «догоняет» направление (инерция/занос)
-  radius: 1.15, // радиус столкновений
+  grip: 5, // насколько быстро скорость «догоняет» направление (инерция/занос)
   carrySpeedFactor: 0.8,
+  // тело для столкновений: капсула вдоль корпуса
+  bodyHalfLength: 0.95,
+  bodyRadius: 0.5,
+  mass: 520, // конь + всадник, кг
+  inertia: 1400, // момент инерции вокруг вертикали (с запасом: ноги сопротивляются развороту)
+  restitution: 0.12,
+  friction: 0.25,
 };
 
 export const STAMINA = {
@@ -74,6 +80,7 @@ export const ULAK = {
   pickupDist: 3.0,
   pickupMaxY: 2.3,
   stealDist: 2.7,
+  tugTime: 1.1, // сколько длится борьба за улак, с
   minThrowH: 4,
   maxThrowH: 20,
   minThrowV: 3,

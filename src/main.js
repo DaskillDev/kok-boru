@@ -95,6 +95,18 @@ async function init() {
         if (thief.isHuman) hud.showBanner('<small>Улак отобран!</small>', 1);
         else if (victim.isHuman) hud.showBanner('<small>У вас вырвали улак!</small>', 1.2);
       },
+      onImpact: (a, b, strength, x, z) => {
+        dust.burst(x, z, Math.min(26, 6 + Math.round(strength * 2)));
+        if (a === player || b === player) rig.shake(strength / 11);
+      },
+      onTug: (holder, rival) => {
+        if (rival === player) hud.showBanner('<small>Тартыш! Держите Пробел и Shift</small>', 1.2);
+        else if (holder === player) hud.showBanner('<small>У вас тянут улак — рывок или бросок!</small>', 1.2);
+      },
+      onTugEnd: (holder, rival, stolen) => {
+        if (!stolen && holder === player) hud.showBanner('<small>Удержали!</small>', 0.9);
+        else if (!stolen && rival === player) hud.showBanner('<small>Не вырвал</small>', 0.9);
+      },
       onEnd: (score) => {
         const [a, b] = score;
         const res = a > b ? 'Победа!' : a < b ? 'Поражение' : 'Ничья';

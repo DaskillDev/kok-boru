@@ -5,6 +5,7 @@ import { furTexture } from '../scene/textures.js';
 // Улак — туша козла. Полёт, кувыркание, отскоки и скатывание считает Rapier (PhysicsWorld).
 
 const UP = new THREE.Vector3(0, 1, 0);
+const _tug = new THREE.Vector3();
 
 function createUlakMesh() {
   const g = new THREE.Group();
@@ -72,6 +73,7 @@ export class Ulak {
     this.lockTime = 0;
     this.resting = false;
     this.inKazan = 0; // 0 или знак X казана, в котором лежит улак
+    this.tugRival = null; // соперник, который тянет улак
 
     this.mesh = createUlakMesh();
     scene.add(this.mesh);
@@ -156,6 +158,12 @@ export class Ulak {
   postStep() {
     if (this.holder) {
       this.holder.carryAnchor.getWorldPosition(this.pos);
+      // во время борьбы улак растянут между двумя всадниками
+      if (this.tugRival) {
+        this.tugRival.carryAnchor.getWorldPosition(_tug);
+        this.pos.lerp(_tug, 0.5);
+        this.pos.y += 0.25;
+      }
       return 0;
     }
     const t = this.body.translation();

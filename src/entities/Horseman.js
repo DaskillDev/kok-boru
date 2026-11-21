@@ -39,6 +39,10 @@ export class Horseman {
     this.mustRelease = false; // после подбора нужно отпустить пробел, прежде чем замахиваться
     this.grabCooldown = 0;
     this.stealImmunity = 0;
+    this.inTug = false; // идёт борьба за улак
+    this.stagger = 0; // время «оглушения» после удара
+    this.jolt = 0; // встряска всадника (0..1)
+    this.accelLong = 0;
 
     // --- визуал ---
     this.group = new THREE.Group();
@@ -82,14 +86,23 @@ export class Horseman {
     this.hasUlak = false;
     this.grabCooldown = 0;
     this.stealImmunity = 0;
+    this.inTug = false;
+    this.stagger = 0;
+    this.jolt = 0;
+    this.accelLong = 0;
   }
 
   // Шаг симуляции движения
   step(dt) {
     const c = this.frozen ? { throttle: 0, steer: 0, sprint: false, action: false } : this.controls;
+    const staggered = this.stagger > 0;
+    this.stagger = Math.max(0, this.stagger - dt);
+    // после сильного удара конь на мгновение хуже слушается повода
+    const throttle = staggered ? c.throttle * 0.45 : c.throttle;
+    const steer = staggered ? c.steer * 0.4 : c.steer;
 
     // выносливость
-    const wantsSprint = c.sprint && c.throttle > 0.1 && !this.exhausted;
+    const wantsSprint = c.sprint && throttle > 0.1 && !this.exhausted && !staggered;
     this.sprinting = wantsSprint && this.stamina > 0;
     if (this.sprinting) {
       this.stamina -= STAMINA.drain * dt;
@@ -108,33 +121,38 @@ export class Horseman {
     let max = this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed;
     if (this.hasUlak) max *= HORSE.carrySpeedFactor;
     if (this.charging) max *= 0.85;
-    let target = 0;
-    if (c.throttle > 0) target = c.throttle * max;
-    else if (c.throttle < 0) target = -HORSE.reverseSpeed;
+    if (this.inTug) max *= 0.7; // в борьбе за улак кони идут связкой
     if (this.exhausted) max *= 0.88; // загнанный конь идёт тяжелее
+    let target = 0;
+    if (throttle > 0) target = throttle * max;
+    else if (throttle < 0) target = -HORSE.reverseSpeed;
     let rate;
     // тяга падает с ростом скорости: с места конь берёт резво, к пределу — всё медленнее
     const pull = THREE.MathUtils.clamp(1.3 - Math.abs(this.speed) / max, 0.3, 1.3);
     if (target > this.speed)
       rate = this.speed < 0 ? HORSE.brake : (this.sprinting ? HORSE.sprintAccel : HORSE.accel) * pull;
-    else rate = c.throttle < 0 && this.speed > 0 ? HORSE.brake : c.throttle === 0 ? HORSE.coast : HORSE.accel;
+    else rate = throttle < 0 && this.speed > 0 ? HORSE.brake : throttle === 0 ? HORSE.coast : HORSE.accel;
+    const before = this.speed;
     const ds = target - this.speed;
     this.speed += Math.sign(ds) * Math.min(Math.abs(ds), rate * dt);
 
-    // поворот: на скорости конь поворачивает шире
-    // предел бокового ускорения: ω ≤ a / v
+    // поворот: предел бокового ускорения, ω ≤ a / v
     const v = Math.abs(this.speed);
     const turnRate = Math.min(HORSE.turnRateSlow, HORSE.lateralAccel / Math.max(v, 1));
     // крутой поворот на скорости «съедает» ход
     this.speed -= Math.sign(this.speed) * Math.abs(this.turn) * v * HORSE.turnDrag * dt;
-    const targetTurn = c.steer * turnRate * (this.speed < -0.2 ? -1 : 1);
-    this.turn += (targetTurn - this.turn) * (1 - Math.exp(-dt * 7));
+    const targetTurn = steer * turnRate * (this.speed < -0.2 ? -1 : 1);
+    this.turn += (targetTurn - this.turn) * (1 - Math.exp(-dt * 6));
     this.heading = wrapPi(this.heading + this.turn * dt);
 
-    // инерция: вектор скорости «догоняет» направление коня
+    // продольное ускорение — для посадки всадника и «клевка» коня
+    const acc = (this.speed - before) / Math.max(dt, 1e-4);
+    this.accelLong += (acc - this.accelLong) * (1 - Math.exp(-dt * 5));
+
+    // инерция: вектор скорости «догоняет» направление коня; после удара сцепление падает
     const fx = Math.sin(this.heading) * this.speed;
     const fz = Math.cos(this.heading) * this.speed;
-    const g = 1 - Math.exp(-dt * HORSE.grip);
+    const g = 1 - Math.exp(-dt * HORSE.grip * (staggered ? 0.3 : 1));
     this.vel.x += (fx - this.vel.x) * g;
     this.vel.z += (fz - this.vel.z) * g;
     this.pos.x += this.vel.x * dt;
@@ -142,6 +160,25 @@ export class Horseman {
 
     this.grabCooldown = Math.max(0, this.grabCooldown - dt);
     this.stealImmunity = Math.max(0, this.stealImmunity - dt);
+    this.jolt = Math.max(0, this.jolt - dt * 1.8);
+  }
+
+  // Импульс (кг·м/с) в точке со смещением (rx, rz) от центра: меняет скорость и разворачивает корпус
+  applyImpulse(jx, jz, rx = 0, rz = 0) {
+    const m = HORSE.mass + (this.hasUlak ? 30 : 0);
+    this.vel.x += jx / m;
+    this.vel.z += jz / m;
+    // момент вокруг вертикали (см. Match: скорость точки = ω·(r_z, −r_x))
+    this.turn += (rz * jx - rx * jz) / HORSE.inertia;
+    const dv = Math.hypot(jx, jz) / m;
+    // скорость вдоль корпуса пересчитывается по новой скорости
+    const along = this.vel.x * Math.sin(this.heading) + this.vel.z * Math.cos(this.heading);
+    this.speed += (THREE.MathUtils.clamp(along, -HORSE.reverseSpeed, this.speed + 2.5) - this.speed) * 0.85;
+    if (dv > 1.2) {
+      this.stagger = Math.max(this.stagger, Math.min(0.85, (dv - 1.2) / 5));
+      this.jolt = Math.min(1, this.jolt + dv / 5);
+    }
+    return dv;
   }
 
   // Столкновение гасит скорость
@@ -158,6 +195,9 @@ export class Horseman {
 
     const bank = THREE.MathUtils.clamp(-this.turn * Math.abs(this.speed) * 0.014, -0.3, 0.3);
     this.tilt.rotation.z += (bank - this.tilt.rotation.z) * (1 - Math.exp(-dt * 8));
+    // при резком торможении конь «садится» на задние ноги, при рывке — подаётся вперёд
+    const pitch = THREE.MathUtils.clamp(this.accelLong * 0.011, -0.1, 0.06);
+    this.tilt.rotation.x += (pitch - this.tilt.rotation.x) * (1 - Math.exp(-dt * 6));
 
     const back = this.horse.sampleBack();
     this.seat.position.set(0, back.y, back.z);
@@ -166,10 +206,12 @@ export class Horseman {
     this.rider.group.rotation.x = -back.pitch * 0.45;
 
     this.rider.update(dt, {
-      carrying: this.hasUlak,
+      carrying: this.hasUlak || this.inTug,
       charge: this.charging ? this.charge : -1,
       speed01: THREE.MathUtils.clamp(Math.abs(this.speed) / HORSE.sprintSpeed, 0, 1),
       turn: this.turn,
+      accel: this.accelLong,
+      jolt: this.jolt,
     });
   }
 

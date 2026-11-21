@@ -27,6 +27,12 @@ export class CameraRig {
     this.focus = new THREE.Vector3();
     this.orbitT = 0;
     this._hidden = null;
+    this._shake = 0;
+  }
+
+  // Встряска камеры от удара (0..1)
+  shake(amount) {
+    this._shake = Math.min(1, Math.max(this._shake, amount));
   }
 
   get mode() {
@@ -115,6 +121,13 @@ export class CameraRig {
       const k = this.mode === 'tv' ? 3 : 7;
       this.camera.position.lerp(_want, 1 - Math.exp(-dt * k));
       this.look.lerp(_look, 1 - Math.exp(-dt * (this.mode === 'tv' ? 4 : 9)));
+    }
+    if (this._shake > 0.01) {
+      const k = this._shake * (this.mode === 'tv' ? 0.5 : 0.22);
+      this.camera.position.x += (Math.random() - 0.5) * k;
+      this.camera.position.y += (Math.random() - 0.5) * k;
+      this.camera.position.z += (Math.random() - 0.5) * k;
+      this._shake *= Math.exp(-dt * 7);
     }
     this.camera.lookAt(this.look);
     this.camera.fov += (this._fov(target) - this.camera.fov) * (1 - Math.exp(-dt * 3));

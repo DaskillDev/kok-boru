@@ -1,4 +1,31 @@
+import * as THREE from 'three';
 import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS } from '../config.js';
+
+// Ближайшие точки двух отрезков на плоскости (x, z)
+function closestSegSeg(p1x, p1z, q1x, q1z, p2x, p2z, q2x, q2z) {
+  const d1x = q1x - p1x;
+  const d1z = q1z - p1z;
+  const d2x = q2x - p2x;
+  const d2z = q2z - p2z;
+  const rx = p1x - p2x;
+  const rz = p1z - p2z;
+  const a = d1x * d1x + d1z * d1z;
+  const e = d2x * d2x + d2z * d2z;
+  const f = d2x * rx + d2z * rz;
+  const c = d1x * rx + d1z * rz;
+  const b = d1x * d2x + d1z * d2z;
+  const den = a * e - b * b;
+  let s = den > 1e-9 ? Math.min(1, Math.max(0, (b * f - c * e) / den)) : 0.5;
+  let t = (b * s + f) / e;
+  if (t < 0) {
+    t = 0;
+    s = Math.min(1, Math.max(0, -c / a));
+  } else if (t > 1) {
+    t = 1;
+    s = Math.min(1, Math.max(0, (b - c) / a));
+  }
+  return { x1: p1x + d1x * s, z1: p1z + d1z * s, x2: p2x + d2x * t, z2: p2z + d2z * t };
+}
 
 // Правила матча: таймер, счёт, розыгрыш, подбор/отбор/бросок улака, столкновения.
 // Не зависит от рендера и ввода — работает только с сущностями и их controls,
@@ -16,6 +43,7 @@ export class Match {
     this.time = MATCH_TIME;
     this.timer = 0;
     this._order = 0;
+    this.tug = null; // { holder, rival, t, score, bias } — текущая борьба за улак
   }
 
   start() {
@@ -33,6 +61,7 @@ export class Match {
       r.frozen = true;
       r.mustRelease = false;
     }
+    this._endTug();
     this.ulak.reset(0, 0, 5);
     this.state = 'countdown';
     this.timer = 3;
@@ -101,78 +130,112 @@ export class Match {
 
   _collide(dt) {
     const rs = this.riders;
-    const R = HORSE.radius;
-    // всадник — всадник
+    const L = HORSE.bodyHalfLength;
+    const R = HORSE.bodyRadius;
+    const m = HORSE.mass;
+    const I = HORSE.inertia;
+
+    // всадник — всадник: корпуса коней — капсулы вдоль курса
     for (let i = 0; i < rs.length; i++) {
       for (let j = i + 1; j < rs.length; j++) {
         const a = rs[i];
         const b = rs[j];
-        const dx = b.pos.x - a.pos.x;
-        const dz = b.pos.z - a.pos.z;
-        const d = Math.hypot(dx, dz);
-        if (d >= R * 2 || d < 1e-4) continue;
-        const nx = dx / d;
-        const nz = dz / d;
-        const push = (R * 2 - d) / 2;
-        a.pos.x -= nx * push;
-        a.pos.z -= nz * push;
-        b.pos.x += nx * push;
-        b.pos.z += nz * push;
-        const rel = (b.vel.x - a.vel.x) * nx + (b.vel.z - a.vel.z) * nz;
-        if (rel < 0) {
-          // обмен импульсом вдоль нормали (неупругий)
-          const k = rel * 0.6;
-          a.vel.x += nx * k;
-          a.vel.z += nz * k;
-          b.vel.x -= nx * k;
-          b.vel.z -= nz * k;
-          // удар гасит скорость тем сильнее, чем выше скорость сближения
-          const hit = Math.min(-rel / 30, 0.45);
-          const slow = Math.exp(-dt * 2.5) * (rel < -3 ? 1 - hit : 1);
-          a.speed *= slow;
-          b.speed *= slow;
-          if (rel < -3) this.events.onImpact?.(a, b, -rel);
+        if (Math.hypot(b.pos.x - a.pos.x, b.pos.z - a.pos.z) > 2 * (L + R)) continue;
+        const afx = Math.sin(a.heading) * L;
+        const afz = Math.cos(a.heading) * L;
+        const bfx = Math.sin(b.heading) * L;
+        const bfz = Math.cos(b.heading) * L;
+        const c = closestSegSeg(
+          a.pos.x - afx, a.pos.z - afz, a.pos.x + afx, a.pos.z + afz,
+          b.pos.x - bfx, b.pos.z - bfz, b.pos.x + bfx, b.pos.z + bfz,
+        );
+        let nx = c.x2 - c.x1;
+        let nz = c.z2 - c.z1;
+        let d = Math.hypot(nx, nz);
+        if (d >= 2 * R) continue;
+        if (d < 1e-4) {
+          nx = b.pos.x - a.pos.x;
+          nz = b.pos.z - a.pos.z;
+          d = Math.hypot(nx, nz) || 1;
+          nx /= d;
+          nz /= d;
+          d = 0;
+        } else {
+          nx /= d;
+          nz /= d;
         }
+        // разводим корпуса
+        const pen = (2 * R - d) / 2;
+        a.pos.x -= nx * pen;
+        a.pos.z -= nz * pen;
+        b.pos.x += nx * pen;
+        b.pos.z += nz * pen;
+
+        // скорости точек контакта с учётом вращения: v + ω·(r_z, −r_x)
+        const rax = c.x1 - a.pos.x;
+        const raz = c.z1 - a.pos.z;
+        const rbx = c.x2 - b.pos.x;
+        const rbz = c.z2 - b.pos.z;
+        const rvx = b.vel.x + b.turn * rbz - (a.vel.x + a.turn * raz);
+        const rvz = b.vel.z - b.turn * rbx - (a.vel.z - a.turn * rax);
+        const vn = rvx * nx + rvz * nz;
+        if (vn > -0.05) continue;
+        const ka = raz * nx - rax * nz;
+        const kb = rbz * nx - rbx * nz;
+        const jn = (-(1 + HORSE.restitution) * vn) / (2 / m + (ka * ka) / I + (kb * kb) / I);
+        // трение вдоль касательной: бока коней «цепляются»
+        const tx = -nz;
+        const tz = nx;
+        const vt = rvx * tx + rvz * tz;
+        const jt = THREE.MathUtils.clamp((-vt * m) / 2, -HORSE.friction * jn, HORSE.friction * jn);
+        const jx = jn * nx + jt * tx;
+        const jz = jn * nz + jt * tz;
+        a.applyImpulse(-jx, -jz, rax, raz);
+        b.applyImpulse(jx, jz, rbx, rbz);
+        if (-vn > 2.5) this.events.onImpact?.(a, b, -vn, (c.x1 + c.x2) / 2, (c.z1 + c.z2) / 2);
       }
     }
-    // казаны и границы
-    const bx = FIELD.length / 2 + FIELD.margin - 0.8;
-    const bz = FIELD.width / 2 + FIELD.margin - 0.8;
-    const kr = KAZAN.outerR + 0.75;
+
+    // казаны и борта: проверяем нос, середину и круп
+    const bx = FIELD.length / 2 + FIELD.margin - R;
+    const bz = FIELD.width / 2 + FIELD.margin - R;
+    const kr = KAZAN.outerR + R * 0.7;
     for (const r of rs) {
-      for (const s of [-1, 1]) {
-        const dx = r.pos.x - s * KAZAN.x;
-        const dz = r.pos.z;
-        const d = Math.hypot(dx, dz);
-        if (d < kr && d > 1e-4) {
-          const nx = dx / d;
-          const nz = dz / d;
-          r.pos.x = s * KAZAN.x + nx * kr;
-          r.pos.z = nz * kr;
-          const vn = r.vel.x * nx + r.vel.z * nz;
-          if (vn < 0) {
-            r.vel.x -= vn * nx;
-            r.vel.z -= vn * nz;
-            r.speed *= Math.exp(-dt * 3);
-          }
+      const fx = Math.sin(r.heading);
+      const fz = Math.cos(r.heading);
+      for (const o of [L, 0, -L]) {
+        const ox = fx * o;
+        const oz = fz * o;
+        for (const s of [-1, 1]) {
+          const dx = r.pos.x + ox - s * KAZAN.x;
+          const dz = r.pos.z + oz;
+          const d = Math.hypot(dx, dz);
+          if (d < kr && d > 1e-4) this._hitStatic(r, dx / d, dz / d, kr - d, ox, oz);
         }
-      }
-      if (Math.abs(r.pos.x) > bx) {
-        r.pos.x = Math.sign(r.pos.x) * bx;
-        r.vel.x = 0;
-        r.speed *= Math.exp(-dt * 2);
-      }
-      if (Math.abs(r.pos.z) > bz) {
-        r.pos.z = Math.sign(r.pos.z) * bz;
-        r.vel.z = 0;
-        r.speed *= Math.exp(-dt * 2);
+        const px = r.pos.x + ox;
+        const pz = r.pos.z + oz;
+        if (Math.abs(px) > bx) this._hitStatic(r, -Math.sign(px), 0, Math.abs(px) - bx, ox, oz);
+        if (Math.abs(pz) > bz) this._hitStatic(r, 0, -Math.sign(pz), Math.abs(pz) - bz, ox, oz);
       }
     }
+  }
+
+  // Контакт с неподвижным препятствием: нормаль (nx, nz) смотрит от препятствия
+  _hitStatic(r, nx, nz, pen, ox, oz) {
+    r.pos.x += nx * pen;
+    r.pos.z += nz * pen;
+    const vn = (r.vel.x + r.turn * oz) * nx + (r.vel.z - r.turn * ox) * nz;
+    if (vn >= 0) return;
+    const k = oz * nx - ox * nz;
+    const j = (-(1 + 0.05) * vn) / (1 / HORSE.mass + (k * k) / HORSE.inertia);
+    const dv = r.applyImpulse(j * nx, j * nz, ox, oz);
+    if (dv > 2.5) this.events.onImpact?.(r, null, dv, r.pos.x + ox, r.pos.z + oz);
   }
 
   _ulakRules(dt) {
     const ulak = this.ulak;
     const n = this.riders.length;
+    if (this.tug) this._tugStep(dt);
     this._order = (this._order + 1) % n; // чтобы никто не имел приоритета при одновременном подборе
     for (let k = 0; k < n; k++) {
       const r = this.riders[(k + this._order) % n];
@@ -203,29 +266,96 @@ export class Match {
           r.stealImmunity = 0.9;
           this.events.onPickup?.(r);
         }
-      } else if (ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.9) {
+      } else if (!this.tug && ulak.holder.teamId !== r.teamId && d < ULAK.stealDist + 0.9) {
         const holder = ulak.holder;
-        r.grabCooldown = r.isHuman ? 0.6 : 1.0;
         if (holder.stealImmunity > 0) continue;
-        let p = 0.45;
-        if (r.sprinting) p += 0.2;
-        if (holder.exhausted) p += 0.15;
-        if (holder.charging) p += 0.1;
-        if (Math.random() < p) {
-          holder.charging = false;
-          holder.charge = 0;
-          holder.grabCooldown = 1.2;
-          holder.bump(0.75);
-          ulak.attach(r);
-          r.mustRelease = true;
-          r.stealImmunity = 1.6;
-          this.events.onSteal?.(r, holder);
-        }
+        // схватился за улак — начинается борьба («тартыш»)
+        this.tug = { holder, rival: r, t: 0, score: 0, bias: (Math.random() - 0.5) * 1.2 };
+        holder.inTug = r.inTug = true;
+        ulak.tugRival = r;
+        this.events.onTug?.(holder, r);
       }
     }
   }
 
+  _endTug() {
+    if (!this.tug) return;
+    this.tug.holder.inTug = this.tug.rival.inTug = false;
+    this.ulak.tugRival = null;
+    this.tug = null;
+  }
+
+  // Борьба за улак: всадники идут связкой, исход решают выносливость, рывок и доля случая
+  _tugStep(dt) {
+    const tug = this.tug;
+    const h = tug.holder;
+    const r = tug.rival;
+    if (!h.hasUlak) {
+      this._endTug();
+      return;
+    }
+    let nx = r.pos.x - h.pos.x;
+    let nz = r.pos.z - h.pos.z;
+    const d = Math.hypot(nx, nz) || 1;
+    nx /= d;
+    nz /= d;
+    if (d > ULAK.stealDist + 2.4) {
+      // оторвался — улак остаётся у хозяина
+      this._endTug();
+      r.grabCooldown = 1.0;
+      h.stealImmunity = 0.7;
+      this.events.onTugEnd?.(h, r, false);
+      return;
+    }
+    // руки и туша связывают всадников: тянет друг к другу и гасит ход
+    const pull = THREE.MathUtils.clamp((d - 1.5) * 3.2, 0, 7);
+    h.vel.x += nx * pull * dt;
+    h.vel.z += nz * pull * dt;
+    r.vel.x -= nx * pull * dt;
+    r.vel.z -= nz * pull * dt;
+    const drag = Math.exp(-dt * 0.8);
+    h.speed *= drag;
+    r.speed *= drag;
+    h.stamina = Math.max(0, h.stamina - 0.1 * dt);
+    r.stamina = Math.max(0, r.stamina - 0.1 * dt);
+    h.jolt = Math.max(h.jolt, 0.35);
+    r.jolt = Math.max(r.jolt, 0.35);
+
+    const sH = 1 + 0.6 * h.stamina + (h.sprinting ? 0.35 : 0);
+    const sR =
+      0.95 +
+      0.6 * r.stamina +
+      (r.sprinting ? 0.35 : 0) +
+      (r.isHuman && r.controls.action ? 0.3 : 0) +
+      (h.charging ? 0.3 : 0);
+    tug.score += (sR - sH + tug.bias) * dt;
+    tug.t += dt;
+    if (tug.t < ULAK.tugTime && Math.abs(tug.score) < 0.6) return;
+
+    const stolen = tug.score > 0;
+    this._endTug();
+    if (stolen) {
+      h.charging = false;
+      h.charge = 0;
+      h.grabCooldown = 1.2;
+      h.stagger = Math.max(h.stagger, 0.4);
+      this.ulak.attach(r);
+      r.mustRelease = true;
+      r.stealImmunity = 1.6;
+      this.events.onSteal?.(r, h);
+    } else {
+      h.stealImmunity = 1.3;
+      r.grabCooldown = 1.4;
+      r.stagger = Math.max(r.stagger, 0.35);
+    }
+    this.events.onTugEnd?.(h, r, stolen);
+  }
+
   _throw(r) {
+    if (this.tug) {
+      this.tug.rival.grabCooldown = 0.8;
+      this._endTug();
+    }
     const vel = r.throwVelocity(r.charge);
     const pos = r.throwOrigin();
     this.ulak.release(pos, vel, r);

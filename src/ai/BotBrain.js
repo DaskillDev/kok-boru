@@ -113,7 +113,7 @@ export class BotBrain {
     // улак у соперника: один гонится, второй перекрывает путь к своему казану
     const myD = dist(me.pos, holder.pos);
     const mateCloser = mates.some((m) => dist(m.pos, holder.pos) < myD - 2);
-    if (!mateCloser || myD < 9) {
+    if (!mateCloser || myD < 24) {
       const lead = clamp(myD / 11, 0.1, 1.2);
       this._drive(holder.pos.x + holder.vel.x * lead, holder.pos.z + holder.vel.z * lead, {
         sprint: me.stamina > lerp(0.3, 0.12, this.skill) && myD < 30,
@@ -138,7 +138,7 @@ export class BotBrain {
     const nearestFoe = Math.min(...foes.map((f) => dist(f.pos, me.pos)));
 
     // бросаем раньше, если вот-вот отберут
-    const pressured = nearestFoe < 3.4 && d < 22;
+    const pressured = nearestFoe < 2.6 && d < 20;
     const inZone = d < this.throwDist || pressured;
 
     c.steer = clamp(err * 3, -1, 1);

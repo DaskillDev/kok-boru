@@ -367,7 +367,11 @@ export class RiderFigure {
     this._armZ += (az - this._armZ) * k;
     this._foreX += (fx - this._foreX) * k;
 
-    const lean = 0.1 + state.speed01 * 0.32;
+    this._t = (this._t || 0) + dt;
+    // на разгоне корпус отстаёт назад, при торможении — подаётся вперёд
+    const inertia = THREE.MathUtils.clamp(-(state.accel || 0) * 0.014, -0.12, 0.2);
+    const jolt = state.jolt || 0;
+    const lean = 0.1 + state.speed01 * 0.32 + inertia + jolt * 0.12;
     this._lean += (lean - this._lean) * (1 - Math.exp(-dt * 6));
     this._roll += (-state.turn * 0.16 - this._roll) * (1 - Math.exp(-dt * 6));
 
@@ -376,7 +380,8 @@ export class RiderFigure {
     const B = this.bones;
     this._w(B.spine, X, this._lean * 0.6);
     this._w(B.spine2, X, this._lean * 0.4);
-    this._w(B.spine, Z, this._roll);
+    this._w(B.spine, Z, this._roll + Math.sin(this._t * 17) * 0.2 * jolt);
+    this._w(B.neck, Z, -Math.sin(this._t * 17 + 0.8) * 0.15 * jolt);
     this._w(B.neck, X, -this._lean * 0.75);
     this._w(B.rArm, X, this._armX);
     this._w(B.rArm, Z, -this._armZ);
