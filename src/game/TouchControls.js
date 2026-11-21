@@ -26,13 +26,57 @@ export class TouchControls {
     );
     this.held = new Map(); // pointerId → кнопка
 
-    this.root.addEventListener('pointerdown', (e) => this._down(e));
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
-    // отпускание ловим на окне: палец может съехать с кнопки или со слоя управления
-    window.addEventListener('pointermove', (e) => this._move(e));
-    window.addEventListener('pointerup', (e) => this._up(e));
-    window.addEventListener('pointercancel', (e) => this._up(e));
+    if ('ontouchstart' in window) {
+      // Сенсорный экран: работаем с «сырыми» касаниями (touch-события) — они одинаково надёжны
+      // во всех мобильных браузерах, включая встроенные (Telegram, WhatsApp) и старые Android.
+      // Каждое событие заодно сверяем со списком пальцев, которые реально на экране: если отпускание
+      // потерялось, «зависшая» кнопка или джойстик сами отпускаются, а не блокируют управление.
+      const opt = { passive: false };
+      const each = (e, fn) => {
+        for (const t of e.changedTouches) fn({ pointerId: t.identifier, clientX: t.clientX, clientY: t.clientY, target: t.target });
+      };
+      this.root.addEventListener(
+        'touchstart',
+        (e) => {
+          if (e.cancelable) e.preventDefault(); // без прокрутки, масштаба и «призрачных» кликов
+          this._sync(e.touches);
+          each(e, (p) => this._down(p));
+        },
+        opt,
+      );
+      this.root.addEventListener(
+        'touchmove',
+        (e) => {
+          if (e.cancelable) e.preventDefault();
+          each(e, (p) => this._move(p));
+        },
+        opt,
+      );
+      const end = (e) => {
+        each(e, (p) => this._up(p));
+        this._sync(e.touches);
+      };
+      this.root.addEventListener('touchend', end, opt);
+      this.root.addEventListener('touchcancel', end, opt);
+      // палец мог уйти со слоя управления или касание оборвала система
+      window.addEventListener('touchend', (e) => this._sync(e.touches), { passive: true });
+      window.addEventListener('touchcancel', (e) => this._sync(e.touches), { passive: true });
+    }
+    // мышь (и экраны без touch-событий): указатели; отпускание ловим на окне
+    const mouseOnly = 'ontouchstart' in window;
+    const ok = (e) => !mouseOnly || e.pointerType === 'mouse';
+    this.root.addEventListener('pointerdown', (e) => {
+      if (!ok(e)) return;
+      e.preventDefault();
+      this._down(e);
+    });
+    window.addEventListener('pointermove', (e) => ok(e) && this._move(e));
+    window.addEventListener('pointerup', (e) => ok(e) && this._up(e));
+    window.addEventListener('pointercancel', (e) => ok(e) && this._up(e));
+    // свернули браузер или открылось системное окно — отпускаем всё
     window.addEventListener('blur', () => this.release());
+    document.addEventListener('visibilitychange', () => document.hidden && this.release());
     this.applySettings();
   }
 
@@ -65,6 +109,15 @@ export class TouchControls {
     this.held.clear();
     for (const b of this.buttons) b.el.classList.remove('down');
     this._resetStick();
+  }
+
+  // Сверка с пальцами, которые сейчас на экране: всё, чего там нет, считается отпущенным
+  _sync(touches) {
+    const live = new Set();
+    for (const t of touches) live.add(t.identifier);
+    for (const id of [...this.held.keys()]) if (!live.has(id)) this._up({ pointerId: id });
+    if (this.stickId !== null && !live.has(this.stickId)) this._up({ pointerId: this.stickId });
+    if (this.targetId !== null && !live.has(this.targetId)) this._up({ pointerId: this.targetId });
   }
 
   // Кнопка под пальцем. Засчитываем и касание рядом с кнопкой: палец шире мыши и часто промахивается
@@ -103,7 +156,6 @@ export class TouchControls {
     if (this.root.classList.contains('hidden')) return;
     const btn = this._buttonAt(e);
     if (btn) {
-      e.preventDefault();
       this.held.set(e.pointerId, btn);
       this._setButton(btn);
       return;

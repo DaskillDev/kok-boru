@@ -132,17 +132,22 @@ export function onFullscreenChange(fn) {
 
 // ---------- касания по кнопкам ----------
 // Браузер не присылает click, если в этот момент другой палец лежит на экране (например, на джойстике):
-// пауза, ответы в дуэли и кнопки меню «не нажимались». Поэтому на сенсорном экране сами превращаем
-// короткое касание кнопки в click, а «родной» click от того же касания гасим, чтобы не сработало дважды.
+// пауза, ответы в дуэли и кнопки меню «не нажимались». В этом — и только в этом — случае сами превращаем
+// короткое касание кнопки в click. Обычное касание одним пальцем обрабатывает сам браузер.
+// После своего click полсекунды гасим «родные» клики: иначе браузер нажал бы ещё и то,
+// что появилось под пальцем (следующий экран меню).
 export function installTouchTaps(onAnyTap) {
   const downs = new Map();
-  let synth = null;
+  let blockUntil = 0;
   const buttonOf = (el) => el?.closest?.('button') ?? null;
+  const forget = (e) => downs.delete(e.pointerId);
   window.addEventListener(
     'pointerdown',
     (e) => {
       if (e.pointerType !== 'touch') return;
-      downs.set(e.pointerId, { b: buttonOf(e.target), x: e.clientX, y: e.clientY });
+      downs.set(e.pointerId, { b: buttonOf(e.target), x: e.clientX, y: e.clientY, multi: downs.size > 0 });
+      // второй палец — помечаем и те касания, что уже были на экране
+      if (downs.size > 1) for (const d of downs.values()) d.multi = true;
     },
     true,
   );
@@ -153,21 +158,24 @@ export function installTouchTaps(onAnyTap) {
       downs.delete(e.pointerId);
       if (!d) return;
       onAnyTap?.();
-      if (!d.b || d.b.disabled || d.b.closest('#touch-buttons')) return;
+      if (!d.multi || !d.b || d.b.disabled || d.b.closest('#touch')) return;
       if (Math.hypot(e.clientX - d.x, e.clientY - d.y) > 16) return;
       const over = document.elementFromPoint(e.clientX, e.clientY);
       if (!over || !d.b.contains(over)) return;
-      synth = { b: d.b, t: performance.now() };
+      blockUntil = performance.now() + 500;
       d.b.click();
     },
     true,
   );
-  window.addEventListener('pointercancel', (e) => downs.delete(e.pointerId), true);
+  window.addEventListener('pointercancel', forget, true);
+  // страховка от «зависших» записей: если пальцев на экране нет, список пуст
+  const sweep = (e) => e.touches.length === 0 && downs.clear();
+  window.addEventListener('touchend', sweep, { passive: true });
+  window.addEventListener('touchcancel', sweep, { passive: true });
   window.addEventListener(
     'click',
     (e) => {
-      if (!e.isTrusted || !synth) return;
-      if (performance.now() - synth.t < 700 && buttonOf(e.target) === synth.b) {
+      if (e.isTrusted && performance.now() < blockUntil) {
         e.stopPropagation();
         e.preventDefault();
       }
