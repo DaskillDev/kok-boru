@@ -44,6 +44,7 @@ function createPitch(group, assets) {
   pitch.rotation.x = -Math.PI / 2;
   pitch.receiveShadow = true;
   group.add(pitch);
+  group.userData.pitchMaterial = mat;
 
   const c = document.createElement('canvas');
   c.width = 1024;

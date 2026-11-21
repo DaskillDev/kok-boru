@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS } from '../config.js';
+import { FIELD, KAZAN, HORSE, ULAK, MATCH_TIME, TEAMS, GRAVITY } from '../config.js';
 
 // Ближайшие точки двух отрезков на плоскости (x, z)
 function closestSegSeg(p1x, p1z, q1x, q1z, p2x, p2z, q2x, q2z) {
@@ -40,24 +40,34 @@ export class Match {
     this.events = events; // колбэки: onGoal, onSteal, onPickup, onThrow, onCountdown, onStart, onEnd
     this.state = 'idle'; // idle | countdown | playing | goal | over
     this.score = [0, 0];
+    this.duration = MATCH_TIME;
     this.time = MATCH_TIME;
     this.timer = 0;
     this._order = 0;
     this.tug = null; // { holder, rival, t, score, bias } — текущая борьба за улак
   }
 
+  // Состав и длительность следующего матча
+  configure(riders, duration = MATCH_TIME) {
+    this.riders = riders;
+    this.duration = duration;
+  }
+
   start() {
     this.score = [0, 0];
-    this.time = MATCH_TIME;
+    this.time = this.duration;
     this.kickoff();
   }
 
   kickoff() {
     const perTeam = [0, 0];
+    const size = this.riders.length / 2;
     for (const r of this.riders) {
       const i = perTeam[r.teamId]++;
       const dir = r.team.attackDir;
-      r.place(-dir * 14, i === 0 ? -7 : 7, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
+      // шеренга в шахматном порядке на своей половине
+      const z = (i - (size - 1) / 2) * 8;
+      r.place(-dir * (13 + (i % 2) * 6), z, dir > 0 ? Math.PI / 2 : -Math.PI / 2);
       r.frozen = true;
       r.mustRelease = false;
     }
@@ -104,15 +114,22 @@ export class Match {
     if (this.state === 'idle') return;
 
     if (this.state === 'playing') {
-      for (const b of this.brains) b.think(dt, this);
+      for (const b of this.brains) {
+        if (b.rider.isHuman || !this.riders.includes(b.rider)) continue;
+        b.think(dt, this);
+      }
     } else {
-      for (const b of this.brains) b.idle();
+      for (const b of this.brains) if (!b.rider.isHuman) b.idle();
     }
 
     for (const r of this.riders) r.step(dt);
     this._collide(dt);
     if (this.state === 'playing') this._ulakRules(dt);
-    for (const r of this.riders) r.prevAction = r.controls.action;
+    for (const r of this.riders) {
+      r.prevAction = r.controls.action;
+      r.prevPass = r.controls.pass;
+      r.prevFeint = r.controls.feint;
+    }
 
     this.physics.syncRiders();
     this.ulak.preStep(dt);
@@ -241,6 +258,15 @@ export class Match {
       const r = this.riders[(k + this._order) % n];
       const action = r.controls.action;
       if (r.mustRelease && !action) r.mustRelease = false;
+      if (r.controls.feint && !r.prevFeint) this._feint(r);
+
+      if (r.hasUlak && r.controls.pass && !r.prevPass && !r.charging) {
+        const mate = this._passTarget(r);
+        if (mate) {
+          this._pass(r, mate);
+          continue;
+        }
+      }
 
       if (r.hasUlak) {
         if (action && !r.mustRelease) {
@@ -252,8 +278,8 @@ export class Match {
         continue;
       }
 
-      // боты хватают автоматически, человек — пробелом
-      const wantGrab = r.isHuman ? action : true;
+      // боты хватают автоматически, человек — пробелом; адресат паса ловит сам
+      const wantGrab = r.isHuman && ulak.passTo !== r ? action : true;
       if (!wantGrab || r.grabCooldown > 0) continue;
       const dx = ulak.pos.x - r.pos.x;
       const dz = ulak.pos.z - r.pos.z;
@@ -276,6 +302,68 @@ export class Match {
         this.events.onTug?.(holder, r);
       }
     }
+  }
+
+  // Лучший адресат паса: напарник впереди, не слишком близко и не слишком далеко
+  _passTarget(r) {
+    const dir = r.team.attackDir;
+    let best = null;
+    let bestScore = Infinity;
+    for (const m of this.riders) {
+      if (m === r || m.teamId !== r.teamId) continue;
+      const d = Math.hypot(m.pos.x - r.pos.x, m.pos.z - r.pos.z);
+      if (d < 4 || d > 42) continue;
+      const score = d - (m.pos.x - r.pos.x) * dir * 0.8;
+      if (score < bestScore) {
+        bestScore = score;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  // Пас: навесная передача в точку, где напарник окажется через время полёта
+  _pass(r, mate) {
+    if (this.tug) {
+      this.tug.rival.grabCooldown = 0.8;
+      this._endTug();
+    }
+    const o = r.throwOrigin();
+    const d = Math.hypot(mate.pos.x - o.x, mate.pos.z - o.z);
+    const t = THREE.MathUtils.clamp(d / 15, 0.45, 1.6);
+    const tx = mate.pos.x + mate.vel.x * t * 0.9;
+    const tz = mate.pos.z + mate.vel.z * t * 0.9;
+    const vel = new THREE.Vector3((tx - o.x) / t, (1.7 - o.y + 0.5 * GRAVITY * t * t) / t, (tz - o.z) / t);
+    this.ulak.release(o, vel, r);
+    this.ulak.passTo = mate;
+    this.ulak.passTime = t + 1.2;
+    r.charging = false;
+    r.charge = 0;
+    r.grabCooldown = 0.6;
+    r.rider.playThrow();
+    this.events.onPass?.(r, mate);
+  }
+
+  // Финт: резкий уход в сторону. Сбивает соперника с захвата, но стоит выносливости
+  _feint(r) {
+    if (r.feintCooldown > 0 || r.stamina < 0.18 || r.stagger > 0) return;
+    const steer = r.controls.steer;
+    const side = Math.abs(steer) > 0.2 ? Math.sign(steer) : Math.random() < 0.5 ? -1 : 1;
+    // «влево» в системе всадника — это +X: (cos h, −sin h)
+    const lx = Math.cos(r.heading) * side;
+    const lz = -Math.sin(r.heading) * side;
+    r.vel.x += lx * 6.5;
+    r.vel.z += lz * 6.5;
+    r.turn += side * 0.9;
+    r.stamina -= 0.18;
+    r.feintCooldown = 1.6;
+    r.stealImmunity = Math.max(r.stealImmunity, 0.7);
+    r.jolt = Math.max(r.jolt, 0.4);
+    if (this.tug) {
+      if (this.tug.holder === r) this.tug.score -= 0.45;
+      else if (this.tug.rival === r) this.tug.score += 0.3;
+    }
+    this.events.onFeint?.(r);
   }
 
   _endTug() {

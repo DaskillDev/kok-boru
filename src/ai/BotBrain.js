@@ -51,6 +51,13 @@ export class BotBrain {
     c.steer = 0;
     c.sprint = false;
     c.action = false;
+    c.pass = false;
+    c.feint = false;
+  }
+
+  setSkill(skill) {
+    this.skill = skill;
+    this._newAttempt();
   }
 
   think(dt, match) {
@@ -59,13 +66,15 @@ export class BotBrain {
     const ulak = match.ulak;
     c.action = false;
     c.sprint = false;
+    c.pass = false;
+    c.feint = false;
 
     const mates = match.riders.filter((r) => r.teamId === me.teamId && r !== me);
     const foes = match.riders.filter((r) => r.teamId !== me.teamId);
     const dist = (a, b) => Math.hypot(a.x - b.x, a.z - b.z);
 
     if (me.hasUlak) {
-      this._carry(me, c, foes, dist);
+      this._carry(me, c, foes, dist, mates, dt);
       return;
     }
 
@@ -127,7 +136,7 @@ export class BotBrain {
     }
   }
 
-  _carry(me, c, foes, dist) {
+  _carry(me, c, foes, dist, mates = [], dt = 0.016) {
     const kx = enemyKazanX(me.teamId);
     const dx = kx - me.pos.x;
     const dz = -me.pos.z;
@@ -140,6 +149,23 @@ export class BotBrain {
     // бросаем раньше, если вот-вот отберут
     const pressured = nearestFoe < 2.6 && d < 20;
     const inZone = d < this.throwDist || pressured;
+
+    // в борьбе за улак сильные боты уходят финтом
+    if (me.inTug && Math.random() < dt * 1.6 * this.skill) c.feint = true;
+    // под давлением вдали от казана — пас открытому напарнику впереди
+    if (nearestFoe < 6 && d > 16 && !me.charging && Math.random() < dt * (0.6 + this.skill)) {
+      const dir = me.team.attackDir;
+      const open = mates.some((m) => {
+        const md = dist(m.pos, me.pos);
+        const ahead = (m.pos.x - me.pos.x) * dir;
+        const free = Math.min(...foes.map((f) => dist(f.pos, m.pos))) > 7;
+        return md > 7 && md < 34 && ahead > 3 && free;
+      });
+      if (open) {
+        c.pass = true;
+        return;
+      }
+    }
 
     c.steer = clamp(err * 3, -1, 1);
     c.throttle = Math.abs(err) > 1.4 ? 0.4 : 1;

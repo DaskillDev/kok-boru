@@ -7,9 +7,10 @@ import { FIELD } from '../config.js';
 //  first — от первого лица, из глаз всадника.
 
 export const CAMERA_MODES = [
-  { id: 'chase', label: 'Камера: за всадником' },
-  { id: 'tv', label: 'Камера: ТВ-трансляция' },
-  { id: 'first', label: 'Камера: от первого лица' },
+  { id: 'chase', label: 'camChase' },
+  { id: 'tv', label: 'camTv' },
+  { id: 'top', label: 'camTop' },
+  { id: 'first', label: 'camFirst' },
 ];
 
 const _want = new THREE.Vector3();
@@ -37,6 +38,19 @@ export class CameraRig {
 
   get mode() {
     return CAMERA_MODES[this.modeIndex].id;
+  }
+
+  setMode(id, target) {
+    const i = CAMERA_MODES.findIndex((m) => m.id === id);
+    if (i < 0 || i === this.modeIndex) return;
+    this.modeIndex = i;
+    this._showHead(true);
+    if (target) this.snap(target);
+  }
+
+  // Камеры, в которых управление идёт «по экрану»
+  get screenRelative() {
+    return this.mode === 'tv' || this.mode === 'top';
   }
 
   nextMode(target) {
@@ -70,6 +84,7 @@ export class CameraRig {
 
   _fov(target) {
     if (this.mode === 'tv') return 30;
+    if (this.mode === 'top') return 38;
     if (this.mode === 'first') return 74 + (target.sprinting ? 6 : 0);
     return 58 + (target.sprinting ? 9 : 0) + Math.min(Math.abs(target.speed), 12) * 0.35;
   }
@@ -82,6 +97,10 @@ export class CameraRig {
       const camX = THREE.MathUtils.clamp(f.x * 0.92, -FIELD.length / 2 + 12, FIELD.length / 2 - 12);
       _want.set(camX, 27, FIELD.width / 2 + 34);
       _look.set(f.x, 1, f.z * 0.55);
+    } else if (this.mode === 'top') {
+      const f = this.focus;
+      _want.set(f.x, 58, f.z + 16);
+      _look.set(f.x, 0, f.z);
     } else if (this.mode === 'first') {
       target.rider.head.getWorldPosition(_head);
       const hx = Math.sin(target.heading);
@@ -118,12 +137,12 @@ export class CameraRig {
       this.camera.position.copy(_want);
       this.look.lerp(_look, 1 - Math.exp(-dt * 14));
     } else {
-      const k = this.mode === 'tv' ? 3 : 7;
+      const k = this.screenRelative ? 3 : 7;
       this.camera.position.lerp(_want, 1 - Math.exp(-dt * k));
-      this.look.lerp(_look, 1 - Math.exp(-dt * (this.mode === 'tv' ? 4 : 9)));
+      this.look.lerp(_look, 1 - Math.exp(-dt * (this.screenRelative ? 4 : 9)));
     }
     if (this._shake > 0.01) {
-      const k = this._shake * (this.mode === 'tv' ? 0.5 : 0.22);
+      const k = this._shake * (this.screenRelative ? 0.5 : 0.22);
       this.camera.position.x += (Math.random() - 0.5) * k;
       this.camera.position.y += (Math.random() - 0.5) * k;
       this.camera.position.z += (Math.random() - 0.5) * k;

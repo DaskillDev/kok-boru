@@ -2,7 +2,8 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1a24" />
     <title>Улак Тартыш</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -10,40 +11,43 @@
     <div id="app"></div>
 
     <div id="hud" class="hidden">
+      <div id="hud-buttons">
+        <button id="btn-pause" aria-label="pause">❚❚</button>
+        <button id="btn-full" aria-label="fullscreen">⛶</button>
+        <button id="btn-mute" aria-label="sound">♪</button>
+        <button id="btn-help" aria-label="help">?</button>
+      </div>
       <div id="scoreboard">
         <div class="team team-0"><span class="tname">Көк</span><span id="score0" class="score">0</span></div>
         <div id="timer">3:00</div>
         <div class="team team-1"><span id="score1" class="score">0</span><span class="tname">Кызыл</span></div>
       </div>
+      <canvas id="minimap" width="220" height="132"></canvas>
       <div id="possession"></div>
       <div id="banner"></div>
       <div id="bars">
-        <div class="bar-label">Күч (выносливость)</div>
+        <div class="bar-label" data-i18n="stamina"></div>
         <div class="bar"><div id="stamina-fill"></div></div>
         <div id="charge-wrap" class="hidden">
-          <div class="bar-label">Сила броска</div>
+          <div class="bar-label" data-i18n="throwPower"></div>
           <div class="bar charge"><div id="charge-fill"></div></div>
         </div>
       </div>
-      <div id="hint">W/S — галоп/тормоз · A/D — поворот · Shift — рывок · Пробел — схватить / бросить · C — камера · G — графика · Esc — пауза</div>
-    </div>
+      <div id="rotate-hint" data-i18n="rotate"></div>
 
-    <div id="menu" class="overlay">
-      <div class="panel">
-        <h1>Улак Тартыш</h1>
-        <p class="sub">Конная игра степи · матч 2×2 · 3 минуты</p>
-        <div id="menu-result" class="hidden"></div>
-        <ul class="controls">
-          <li><b>W / ↑</b> — вперёд, <b>S / ↓</b> — тормоз / назад</li>
-          <li><b>A D / ← →</b> — поворот коня</li>
-          <li><b>Shift</b> — рывок (тратит выносливость)</li>
-          <li><b>Пробел</b> — подхватить улак рядом или вырвать у соперника</li>
-          <li><b>Пробел (удерживать)</b> — замах, отпустить — бросок в казан соперника</li>
-          <li><b>C</b> — камера: за всадником / ТВ-трансляция / от первого лица, <b>G</b> — качество графики</li>
-        </ul>
-        <button id="start-btn" disabled>Загрузка…</button>
+      <!-- сенсорное управление -->
+      <div id="touch" class="hidden">
+        <div id="stick-zone"><div id="stick"><i></i></div></div>
+        <div id="touch-buttons">
+          <button id="tb-pass" data-i18n="btnPass"></button>
+          <button id="tb-feint" data-i18n="btnFeint"></button>
+          <button id="tb-sprint" data-i18n="btnSprint"></button>
+          <button id="tb-action" data-i18n="btnSteal"></button>
+        </div>
       </div>
     </div>
+
+    <div id="menu" class="overlay"></div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

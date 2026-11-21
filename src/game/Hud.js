@@ -12,9 +12,7 @@ export class Hud {
     this.charge = $('charge-fill');
     this.banner = $('banner');
     this.possession = $('possession');
-    this.menu = $('menu');
-    this.menuResult = $('menu-result');
-    this.startBtn = $('start-btn');
+    this.muteBtn = $('btn-mute');
     this._bannerTimer = 0;
     this._last = {};
   }
@@ -53,6 +51,10 @@ export class Hud {
     this.possession.textContent = text;
   }
 
+  setMuted(m) {
+    this.muteBtn.classList.toggle('off', m);
+  }
+
   // duration = 0 → держится, пока не заменят
   showBanner(html, duration = 0, color = '') {
     this.banner.innerHTML = html;
@@ -65,18 +67,5 @@ export class Hud {
       this._bannerTimer -= dt;
       if (this._bannerTimer <= 0) this.banner.innerHTML = '';
     }
-  }
-
-  showMenu(resultHtml, buttonText) {
-    this.menu.classList.remove('hidden');
-    if (resultHtml) {
-      this.menuResult.innerHTML = resultHtml;
-      this.menuResult.classList.remove('hidden');
-    }
-    if (buttonText) this.startBtn.textContent = buttonText;
-  }
-
-  hideMenu() {
-    this.menu.classList.add('hidden');
   }
 }

@@ -76,7 +76,7 @@ export function createEnvironment(scene, assets) {
   scene.add(sun);
   scene.add(sun.target);
 
-  return { sun, sunDir };
+  return { sun, sunDir, fogColor: scene.fog.color.clone() };
 }
 
 // Бескрайняя степь вокруг поля
@@ -307,3 +307,23 @@ function mergeSimple(geos) {
 }
 
 export { makeNoiseMap };
+
+// Погода: меняет свет, дымку и экспозицию поверх одного и того же HDRI-неба
+const WEATHER = {
+  clear: { sun: 3.6, sunColor: 0xfff2de, env: 0.9, bg: 1.0, fog: 0.00095, fogTint: [1, 1, 1], exposure: 0.64 },
+  overcast: { sun: 1.1, sunColor: 0xe8eef6, env: 1.25, bg: 0.72, fog: 0.0024, fogTint: [0.82, 0.86, 0.92], exposure: 0.6 },
+  evening: { sun: 2.7, sunColor: 0xffa860, env: 0.6, bg: 0.6, fog: 0.0015, fogTint: [1.0, 0.72, 0.52], exposure: 0.66 },
+  fog: { sun: 1.5, sunColor: 0xf4f0e8, env: 1.1, bg: 0.9, fog: 0.007, fogTint: [0.95, 0.96, 0.98], exposure: 0.62 },
+};
+export const WEATHER_IDS = Object.keys(WEATHER);
+
+export function applyWeather(scene, renderer, env, id) {
+  const w = WEATHER[id] ?? WEATHER.clear;
+  env.sun.intensity = w.sun;
+  env.sun.color.set(w.sunColor);
+  scene.environmentIntensity = w.env;
+  scene.backgroundIntensity = w.bg;
+  scene.fog.density = w.fog;
+  scene.fog.color.setRGB(env.fogColor.r * w.fogTint[0], env.fogColor.g * w.fogTint[1], env.fogColor.b * w.fogTint[2]);
+  renderer.toneMappingExposure = w.exposure;
+}

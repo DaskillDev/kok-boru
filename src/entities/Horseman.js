@@ -6,7 +6,38 @@ import { RiderFigure, createTack } from './RiderFigure.js';
 // Пустой набор команд управления. Его заполняет либо клавиатура, либо ИИ,
 // а позже — сеть: сущность не знает, кто ей управляет.
 export function makeControls() {
-  return { throttle: 0, steer: 0, sprint: false, action: false };
+  return { throttle: 0, steer: 0, sprint: false, action: false, pass: false, feint: false };
+}
+
+const FROZEN = makeControls();
+
+// Табличка с именем над всадником
+function makeNameTag(text, css) {
+  const c = document.createElement('canvas');
+  c.width = 256;
+  c.height = 64;
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true, fog: false, sizeAttenuation: false }),
+  );
+  // размер задан в долях экрана — подпись читается на любом расстоянии
+  sprite.scale.set(0.15, 0.0375, 1);
+  sprite.renderOrder = 6;
+  sprite.userData.draw = (name, human) => {
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, 256, 64);
+    ctx.font = '700 34px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(10,16,24,0.7)';
+    ctx.strokeText(name, 128, 34);
+    ctx.fillStyle = human ? '#ffe27a' : css;
+    ctx.fillText(name, 128, 34);
+    tex.needsUpdate = true;
+  };
+  sprite.userData.draw(text, false);
+  return sprite;
 }
 
 const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));
@@ -30,7 +61,11 @@ export class Horseman {
     this.sprinting = false;
     this.controls = makeControls();
     this.prevAction = false;
+    this.prevPass = false;
+    this.prevFeint = false;
     this.frozen = false;
+    this.speedFactor = 1; // множитель скорости (сложность ботов)
+    this.feintCooldown = 0;
 
     // --- улак ---
     this.hasUlak = false;
@@ -60,15 +95,32 @@ export class Horseman {
     this.carryAnchor.position.set(-0.6, -0.5, 0.05);
     this.seat.add(this.carryAnchor);
 
-    if (isHuman) {
-      const ring = new THREE.Mesh(
-        new THREE.RingGeometry(1.25, 1.45, 48),
-        new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.55, depthWrite: false }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.05;
-      this.group.add(ring);
-    }
+    // кольцо под всадником, которым управляет игрок
+    this.ring = new THREE.Mesh(
+      new THREE.RingGeometry(1.25, 1.45, 48),
+      new THREE.MeshBasicMaterial({ color: 0xffe27a, transparent: true, opacity: 0.6, depthWrite: false }),
+    );
+    this.ring.rotation.x = -Math.PI / 2;
+    this.ring.position.y = 0.05;
+    this.ring.visible = isHuman;
+    this.group.add(this.ring);
+
+    this.tag = makeNameTag(name, this.team.css);
+    this.tag.position.y = 3.0;
+    this.group.add(this.tag);
+  }
+
+  setName(name) {
+    this.name = name;
+    this.tag.userData.draw(name, this.isHuman);
+  }
+
+  // Передаёт управление игроку или возвращает боту
+  setHuman(v) {
+    this.isHuman = v;
+    this.ring.visible = v;
+    this.tag.userData.draw(this.name, v);
+    Object.assign(this.controls, FROZEN);
   }
 
   get forward() {
@@ -94,7 +146,7 @@ export class Horseman {
 
   // Шаг симуляции движения
   step(dt) {
-    const c = this.frozen ? { throttle: 0, steer: 0, sprint: false, action: false } : this.controls;
+    const c = this.frozen ? FROZEN : this.controls;
     const staggered = this.stagger > 0;
     this.stagger = Math.max(0, this.stagger - dt);
     // после сильного удара конь на мгновение хуже слушается повода
@@ -118,7 +170,7 @@ export class Horseman {
     }
 
     // разгон / торможение
-    let max = this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed;
+    let max = (this.sprinting ? HORSE.sprintSpeed : HORSE.runSpeed) * this.speedFactor;
     if (this.hasUlak) max *= HORSE.carrySpeedFactor;
     if (this.charging) max *= 0.85;
     if (this.inTug) max *= 0.7; // в борьбе за улак кони идут связкой
@@ -161,6 +213,7 @@ export class Horseman {
     this.grabCooldown = Math.max(0, this.grabCooldown - dt);
     this.stealImmunity = Math.max(0, this.stealImmunity - dt);
     this.jolt = Math.max(0, this.jolt - dt * 1.8);
+    this.feintCooldown = Math.max(0, this.feintCooldown - dt);
   }
 
   // Импульс (кг·м/с) в точке со смещением (rx, rz) от центра: меняет скорость и разворачивает корпус

@@ -74,6 +74,8 @@ export class Ulak {
     this.resting = false;
     this.inKazan = 0; // 0 или знак X казана, в котором лежит улак
     this.tugRival = null; // соперник, который тянет улак
+    this.passTo = null; // кому адресован пас
+    this.passTime = 0;
 
     this.mesh = createUlakMesh();
     scene.add(this.mesh);
@@ -112,6 +114,8 @@ export class Ulak {
     this.lockTime = 0;
     this.resting = false;
     this.inKazan = 0;
+    this.tugRival = null;
+    this.passTo = null;
     this._teleport(x, y, z, Math.random() * 6);
     this.physics.setUlakHitsHorses(this.collider, true);
   }
@@ -145,6 +149,10 @@ export class Ulak {
 
   // До шага физики: таймеры
   preStep(dt) {
+    if (this.passTo) {
+      this.passTime -= dt;
+      if (this.passTime <= 0 || this.holder) this.passTo = null;
+    }
     if (this.lockTime > 0) {
       this.lockTime = Math.max(0, this.lockTime - dt);
       if (this.lockTime === 0) {
