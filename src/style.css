@@ -256,6 +256,14 @@ html.short #possession { display: none; }
   place-items: center; font-size: 22px; color: #ffd23a; text-shadow: 0 0 6px #000, 0 2px 4px #000;
 }
 #ulak-arrow.on { display: grid; }
+/* шкала борьбы за улак: слева цвет хозяина, справа — соперника; чей цвет шире, тот пересиливает */
+#tug-bar {
+  display: none; position: absolute; left: 0; top: 0; width: 96px; height: 10px; border-radius: 6px; pointer-events: none;
+  background: linear-gradient(90deg, var(--ca, #3b7bea) 0 calc(var(--k, .5) * 100%), var(--cb, #e04640) calc(var(--k, .5) * 100%) 100%);
+  border: 2px solid rgba(255,255,255,.85); box-shadow: 0 2px 6px rgba(0,0,0,.5);
+}
+#tug-bar.on { display: block; }
+#tug-bar i { position: absolute; top: -5px; bottom: -5px; width: 4px; margin-left: -2px; border-radius: 2px; background: #fff; left: calc(var(--k, .5) * 100%); box-shadow: 0 0 4px #000; }
 
 #timer { flex-direction: column; line-height: 1; justify-content: center; }
 #timer small { font-size: 10px; font-weight: 600; opacity: .7; letter-spacing: 1px; margin-bottom: 2px; }

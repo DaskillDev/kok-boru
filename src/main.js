@@ -1,6 +1,6 @@
 import { USING_CDN } from './assetBase.js';
 import * as THREE from 'three';
-import { TEAMS, FIELD, KAZAN, setTeamCountry } from './config.js';
+import { TEAMS, FIELD, KAZAN, ULAK, setTeamCountry } from './config.js';
 import { COUNTRIES, countryByCode, countryName, flagCanvas } from './data/countries.js';
 import { BREEDS, breedById, breedFactors, riderFactors } from './data/horses.js';
 import { MathDuel } from './game/MathDuel.js';
@@ -574,8 +574,17 @@ async function init() {
         if (rival === player) hud.showBanner(`<small>${t('tugRival')}</small>`, 1.2);
         else if (holder === player) hud.showBanner(`<small>${t('tugHolder')}</small>`, 1.2);
       },
-      onTugEnd: (holder, rival, stolen) => {
+      // рывок в борьбе: пыль из-под копыт, встряска камеры, глухой удар
+      onTugHeave: (a, b) => {
+        dust.burst((a.pos.x + b.pos.x) / 2, (a.pos.z + b.pos.z) / 2, 5);
         if (demo) return;
+        if (a === player || b === player) rig.shake(0.12);
+        audio.impact(1.2, b.pos.x, b.pos.z);
+      },
+      onTugEnd: (holder, rival, stolen) => {
+        dust.burst((holder.pos.x + rival.pos.x) / 2, (holder.pos.z + rival.pos.z) / 2, 12);
+        if (demo) return;
+        if (holder === player || rival === player) rig.shake(0.3);
         if (!stolen && holder === player) hud.showBanner(`<small>${t('held')}</small>`, 0.9);
         else if (!stolen && rival === player) hud.showBanner(`<small>${t('notStolen')}</small>`, 0.9);
       },
@@ -771,6 +780,29 @@ function updateUlakArrow() {
     }
   }
   ulakArrow.classList.remove('on');
+}
+
+// Шкала борьбы за улак над парой всадников: чей цвет занимает больше — тот и пересиливает
+const tugBar = document.getElementById('tug-bar');
+function updateTugBar() {
+  const tug = match.tug;
+  if (!tug || demo || match.state !== 'playing') {
+    tugBar.classList.remove('on');
+    return;
+  }
+  _proj.set((tug.holder.pos.x + tug.rival.pos.x) / 2, 3.6, (tug.holder.pos.z + tug.rival.pos.z) / 2).project(camera);
+  if (_proj.z > 1 || Math.abs(_proj.x) > 1 || Math.abs(_proj.y) > 1) {
+    tugBar.classList.remove('on');
+    return;
+  }
+  const { w, h } = stageSize();
+  tugBar.style.transform = `translate(${(_proj.x * 0.5 + 0.5) * w}px, ${(0.5 - _proj.y * 0.5) * h}px) translate(-50%, -50%)`;
+  // слева — цвет хозяина улака, справа — соперника
+  const k = THREE.MathUtils.clamp(0.5 - (tug.score / ULAK.tugWin) * 0.5, 0, 1);
+  tugBar.style.setProperty('--k', k.toFixed(3));
+  tugBar.style.setProperty('--ca', TEAMS[tug.holder.teamId].css);
+  tugBar.style.setProperty('--cb', TEAMS[tug.rival.teamId].css);
+  tugBar.classList.add('on');
 }
 
 // Режим «Авто»: если кадры идут медленно несколько секунд подряд — понижаем качество
@@ -1051,6 +1083,7 @@ function frame(now) {
     }
     aim.update(player);
     updateUlakArrow();
+    updateTugBar();
     // подсветка адресата паса
     const mate = !demo && match.state === 'playing' && player.hasUlak ? match._passTarget(player) : null;
     passRing.visible = !!mate;

@@ -574,9 +574,12 @@ export class Match {
         const holder = ulak.holder;
         if (holder.stealImmunity > 0) continue;
         // схватился за улак — начинается борьба («тартыш»)
-        this.tug = { holder, rival: r, t: 0, score: 0, bias: (Math.random() - 0.5) * 1.2, quiz: false };
+        this.tug = { holder, rival: r, t: 0, score: 0, bias: (Math.random() - 0.5) * 1.2, quiz: false, heaveT: 0.15 };
         holder.inTug = r.inTug = true;
+        holder.tugWith = r;
+        r.tugWith = holder;
         ulak.tugRival = r;
+        ulak.tugShift = 0.3;
         // математическая дуэль: исход решает пример (если участвует игрок)
         if (this.mathDuel?.(holder, r)) this.tug.quiz = true;
         this.events.onTug?.(holder, r);
@@ -651,6 +654,7 @@ export class Match {
   _endTug() {
     if (!this.tug) return;
     this.tug.holder.inTug = this.tug.rival.inTug = false;
+    this.tug.holder.tugWith = this.tug.rival.tugWith = null;
     this.ulak.tugRival = null;
     this.tug = null;
   }
@@ -699,7 +703,29 @@ export class Match {
       r.skills.power;
     tug.score += (sR - sH + tug.bias) * dt;
     tug.t += dt;
-    if (tug.t < ULAK.tugTime && Math.abs(tug.score) < 0.6) return;
+    // туша ползёт к тому, кто пересиливает: 0 — у хозяина, 1 — у соперника
+    this.ulak.tugShift = THREE.MathUtils.clamp(0.3 + (tug.score / ULAK.tugWin) * 0.55, 0.08, 0.92);
+
+    // рывки: примерно раз в полсекунды тот, кто сейчас сильнее, дёргает тушу на себя — второго тянет к нему
+    tug.heaveT -= dt;
+    if (tug.heaveT <= 0) {
+      tug.heaveT = ULAK.tugHeave * (0.8 + Math.random() * 0.4);
+      const rivalPulls = sR - sH + tug.bias + (Math.random() - 0.5) * 0.5 > 0;
+      const a = rivalPulls ? r : h; // кто дёрнул
+      const b = rivalPulls ? h : r;
+      const sg = rivalPulls ? 1 : -1; // n направлен от хозяина к сопернику; того, кого дёрнули, тянет к дёрнувшему
+      b.vel.x += nx * sg * 1.7;
+      b.vel.z += nz * sg * 1.7;
+      a.vel.x += nx * sg * 0.5;
+      a.vel.z += nz * sg * 0.5;
+      a.tugHeave = 1;
+      b.tugHeave = -1;
+      a.jolt = Math.max(a.jolt, 0.6);
+      b.jolt = Math.max(b.jolt, 0.9);
+      tug.score += rivalPulls ? 0.06 : -0.06;
+      this.events.onTugHeave?.(a, b);
+    }
+    if (tug.t < ULAK.tugTime && Math.abs(tug.score) < ULAK.tugWin) return;
 
     this.resolveTug(tug.score > 0);
   }
@@ -712,6 +738,25 @@ export class Match {
     const r = tug.rival;
     this._endTug();
     if (!h.hasUlak) return;
+    // последний рывок: проигравшего отбрасывает от соперника, он качается в седле
+    {
+      const lose = stolen ? h : r;
+      const win = stolen ? r : h;
+      let nx = lose.pos.x - win.pos.x;
+      let nz = lose.pos.z - win.pos.z;
+      const d = Math.hypot(nx, nz) || 1;
+      nx /= d;
+      nz /= d;
+      lose.vel.x += nx * 2.4;
+      lose.vel.z += nz * 2.4;
+      win.vel.x -= nx * 0.8;
+      win.vel.z -= nz * 0.8;
+      lose.jolt = 1;
+      win.jolt = Math.max(win.jolt, 0.7);
+      win.tugHeave = 1;
+      lose.tugRecoil = 0.7; // с — отшатнулся от рывка (см. Horseman.render)
+      lose.tugRecoilFrom = win;
+    }
     if (stolen) {
       h.charging = false;
       h.charge = 0;

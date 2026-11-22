@@ -7,6 +7,7 @@ import { furShells } from '../scene/props.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const _tug = new THREE.Vector3();
+const _tug2 = new THREE.Vector3();
 
 function createUlakMesh() {
   const g = new THREE.Group();
@@ -86,6 +87,9 @@ export class Ulak {
     this.resting = false;
     this.inKazan = 0; // 0 или знак X казана, в котором лежит улак
     this.tugRival = null; // соперник, который тянет улак
+    this.tugShift = 0.3; // где туша между двумя всадниками: 0 — у хозяина, 1 — у соперника
+    this._blend = 0; // плавный перенос туши на экране при смене хозяина
+    this._blendFrom = new THREE.Vector3();
     this.passTo = null; // кому адресован пас
     this._inSteps = 0;
     this.passTime = 0;
@@ -138,6 +142,9 @@ export class Ulak {
     this.holder = rider;
     this.lastHolder = rider;
     rider.hasUlak = true;
+    // на экране туша не «перескакивает» в новые руки, а переносится за четверть секунды
+    this._blend = 1;
+    this._blendFrom.copy(this.mesh.position);
     this.resting = false;
     this.inKazan = 0;
     this.vel.set(0, 0, 0);
@@ -207,7 +214,7 @@ export class Ulak {
       // во время борьбы улак растянут между двумя всадниками
       if (this.tugRival) {
         side(this.tugRival, _tug);
-        this.pos.lerp(_tug, 0.5);
+        this.pos.lerp(_tug, this.tugShift);
         this.pos.y += 0.25;
       }
       return 0;
@@ -246,15 +253,50 @@ export class Ulak {
     if (this.holder) {
       // на экране туша висит точно у стремени и повторяет движения коня
       this.holder.carryAnchor.getWorldPosition(m.position);
-      if (this.tugRival) {
-        this.tugRival.carryAnchor.getWorldPosition(_tug);
-        m.position.lerp(_tug, 0.5);
-        m.position.y += 0.25;
+      const tr = this.tugRival;
+      if (tr) {
+        // борьба: туша натянута между руками двух всадников и ползёт к тому, кто пересиливает
+        const h = this.holder;
+        let nx = tr.pos.x - h.pos.x;
+        let nz = tr.pos.z - h.pos.z;
+        const d = Math.hypot(nx, nz) || 1;
+        nx /= d;
+        nz /= d;
+        this._shift = (this._shift ?? 0.3) + (this.tugShift - (this._shift ?? 0.3)) * (1 - Math.exp(-dt * 9));
+        // концы туши — в руках всадников (та рука, что ближе к сопернику)
+        const hand = (q) => (q.tugSide < 0 ? q.rider.bones.lHand : q.rider.bones.rHand);
+        hand(h).getWorldPosition(_tug);
+        hand(tr).getWorldPosition(_tug2);
+        if (_tug.distanceToSquared(_tug2) > 0.04) {
+          nx = _tug2.x - _tug.x;
+          nz = _tug2.z - _tug.z;
+          this._tugLen = _tug.distanceTo(_tug2);
+          m.position.lerpVectors(_tug, _tug2, 0.36 + 0.28 * this._shift);
+          m.position.y += -0.12 + Math.sin((this._t || 0) * 23) * 0.03;
+        } else {
+          const reach = Math.min(0.75, d * 0.3);
+          const a = reach + (d - 2 * reach) * this._shift;
+          m.position.set(h.pos.x + nx * a, 1.42, h.pos.z + nz * a);
+        }
+        this._tugYaw = Math.atan2(nx, nz); // туша вытянута вдоль линии между всадниками
+      } else this._shift = 0.3;
+      if (this._blend > 0) {
+        this._blend = Math.max(0, this._blend - dt / 0.26);
+        const k = this._blend * this._blend * (3 - 2 * this._blend);
+        m.position.lerp(this._blendFrom, k);
+        m.position.y += Math.sin((1 - this._blend) * Math.PI) * 0.25;
       }
     }
+    // в борьбе тушу растягивают
+    const stretch = this.holder && this.tugRival ? THREE.MathUtils.clamp((this._tugLen || 1.3) / 1.05, 1.1, 1.55) : 1;
+    m.scale.z += (stretch - m.scale.z) * Math.min(1, dt * 12);
     const legs = m.userData.legs;
     const t = (this._t = (this._t || 0) + dt);
-    if (this.holder) {
+    if (this.holder && this.tugRival) {
+      // в борьбе туша растянута поперёк, между всадниками, и дрожит от рывков
+      m.rotation.set(Math.sin(t * 19) * 0.12, this._tugYaw + Math.sin(t * 13) * 0.08, Math.sin(t * 16) * 0.1);
+      for (const l of legs) l.rotation.x = l.userData.rest + Math.sin(t * 21 + l.userData.phase) * 0.45;
+    } else if (this.holder) {
       // туша висит у стремени и раскачивается маятником в такт галопу и от рывков коня
       const h = this.holder;
       const sp = Math.hypot(h.vel.x, h.vel.z);

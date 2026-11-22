@@ -109,6 +109,10 @@ export class Horseman {
     this.grabCooldown = 0;
     this.stealImmunity = 0;
     this.inTug = false; // идёт борьба за улак
+    this.tugWith = null; // с кем борется
+    this.tugHeave = 0; // +1 — только что дёрнул тушу на себя, −1 — дёрнули его (затухает)
+    this.tugRecoil = 0; // с — отшатнулся после проигранного рывка
+    this.tugRecoilFrom = null;
     this.stagger = 0; // время «оглушения» после удара
     this.jolt = 0; // встряска всадника (0..1)
     this.accelLong = 0;
@@ -333,7 +337,20 @@ export class Horseman {
     // всадник не наследует весь наклон спины — корпус держит вертикаль
     this.rider.group.rotation.x = -back.pitch * 0.45;
 
+    // борьба за улак: с какой стороны соперник (+1 — справа, −1 — слева)
+    this.tugHeave *= Math.exp(-dt * 5);
+    this.tugRecoil = Math.max(0, this.tugRecoil - dt);
+    const foe = this.tugWith || (this.tugRecoil > 0 ? this.tugRecoilFrom : null);
+    let tugSide = 0;
+    if (foe) tugSide = (foe.pos.x - this.pos.x) * Math.cos(this.heading) - (foe.pos.z - this.pos.z) * Math.sin(this.heading) > 0 ? -1 : 1;
+
+    this.tugSide = tugSide;
+
     this.rider.update(dt, {
+      tugSide,
+      tug: this.tugWith ? 1 : 0,
+      tugHeave: this.tugHeave,
+      tugRecoil: this.tugWith ? 0 : this.tugRecoil / 0.7,
       carrying: this.hasUlak || this.inTug,
       charge: this.charging ? this.charge : -1,
       speed01: THREE.MathUtils.clamp(Math.abs(this.speed) / HORSE.sprintSpeed, 0, 1),

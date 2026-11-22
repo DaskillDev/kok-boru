@@ -472,6 +472,13 @@ export class RiderFigure {
       ax = -0.6 - state.charge * 1.7; // замах: рука вверх-назад
       az = 0.2;
       fx = 0.3;
+    } else if (state.tug) {
+      // борьба: рука вытянута вбок, к туше; на рывке — резко на себя
+      const pullIn = Math.max(0, state.tugHeave || 0);
+      const left = (state.tugSide || 0) < 0; // соперник слева — тянется левая рука, правая остаётся внизу
+      ax = left ? 0.5 : 0.25;
+      az = left ? 0.2 : 1.3 - pullIn * 0.45;
+      fx = left ? 0.6 : 0.1 + pullIn * 0.9;
     } else if ((state.reach || 0) > 0.05) {
       // тянется к лежащему улаку: рука вниз и в сторону
       ax = 0.5 + state.reach * 0.4;
@@ -490,6 +497,13 @@ export class RiderFigure {
     this._armX += (ax - this._armX) * k;
     this._armZ += (az - this._armZ) * k;
     this._foreX += (fx - this._foreX) * k;
+    // борьба: наклон к сопернику (сильнее, когда дёрнули нас), после проигранного рывка — отшатывается
+    const ts = state.tugSide || 0;
+    const tugRoll = state.tug ? ts * (0.6 - (state.tugHeave || 0) * 0.35) : -ts * (state.tugRecoil || 0) * 0.5;
+    this._tugRoll = (this._tugRoll || 0) + (tugRoll - (this._tugRoll || 0)) * (1 - Math.exp(-dt * 14));
+    // соперник слева — тянется левой рукой, правая остаётся у повода
+    const lz = state.tug && ts < 0 ? 1.3 - Math.max(0, state.tugHeave || 0) * 0.45 : 0;
+    this._lArmZ = (this._lArmZ || 0) + (lz - (this._lArmZ || 0)) * k;
 
     this._t = (this._t || 0) + dt;
     // на разгоне корпус отстаёт назад, при торможении — подаётся вперёд
@@ -509,7 +523,11 @@ export class RiderFigure {
     const B = this.bones;
     this._w(B.spine, X, this._lean * 0.6);
     this._w(B.spine2, X, this._lean * 0.4);
-    this._w(B.spine, Z, this._roll + Math.sin(this._t * 17) * 0.2 * jolt);
+    this._w(B.spine, Z, this._roll + this._tugRoll + Math.sin(this._t * 17) * 0.2 * jolt);
+    if (this._lArmZ > 0.01) {
+      this._w(B.lArm, X, 0.25 * this._lArmZ);
+      this._w(B.lArm, Z, this._lArmZ);
+    }
     this._w(B.neck, Z, -Math.sin(this._t * 17 + 0.8) * 0.15 * jolt);
     this._w(B.neck, X, -this._lean * 0.75);
     this._w(B.rArm, X, this._armX);
