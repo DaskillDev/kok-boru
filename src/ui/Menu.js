@@ -54,6 +54,7 @@ const SETTINGS_TABS = {
     { type: 'range', key: 'musicMatch', label: 'musicMatch' },
     { type: 'note', label: 'musicCredit' },
     { type: 'range', key: 'sfx', label: 'sfx' },
+    { type: 'toggle', key: 'commentator', label: 'commentator' },
     { type: 'toggle', key: 'vibration', label: 'vibration' },
   ],
   screen: [

@@ -248,6 +248,7 @@ export const EXTRA = {
     music: 'Music',
     sfx: 'Effects',
     vibration: 'Vibration',
+    commentator: 'Commentator',
     quality: 'Graphics quality',
     auto: 'Auto',
     low: 'Low',
