@@ -18,6 +18,10 @@ export class Input {
     this.onCamera = null;
     this.onGraphics = null;
     this.onSwitch = null;
+    this.onAuto = null;
+    // режим «Авто»: пока игрок сам не рулит, конь скачет к точке autoTarget (её каждый кадр задаёт main.js — улак)
+    this.auto = false;
+    this.autoTarget = null;
     window.addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
       if (GAME_KEYS.has(e.code)) {
@@ -34,6 +38,8 @@ export class Input {
       } else if (e.code === 'KeyQ' || e.code === 'Tab') {
         e.preventDefault();
         this.onSwitch?.();
+      } else if (e.code === 'KeyR') {
+        this.onAuto?.();
       }
     });
     window.addEventListener('keyup', (e) => {
@@ -71,6 +77,16 @@ export class Input {
       const d = Math.hypot(dx, dz);
       this._steerTo(controls, rider, Math.atan2(dx, dz), clamp(d / 5, 0, 1));
       if (d < 1.2) controls.throttle = 0;
+      return;
+    }
+
+    // режим «Авто»: игрок не трогает управление — конь сам скачет за улаком
+    if (this.auto && this.autoTarget && !fwd && !back && !left && !right && Math.hypot(v.x, v.y) < 0.15) {
+      const dx = this.autoTarget.x - rider.pos.x;
+      const dz = this.autoTarget.z - rider.pos.z;
+      const d = Math.hypot(dx, dz);
+      this._steerTo(controls, rider, Math.atan2(dx, dz), clamp(d / 3, 0.45, 1));
+      if (d < 0.8) controls.throttle = 0;
       return;
     }
 

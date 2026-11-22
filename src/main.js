@@ -637,6 +637,12 @@ async function init() {
     hud.showBanner(`<small>${t('gfx')}: ${t(q)}</small>`, 1.4);
   };
   input.onSwitch = () => manualSwitch();
+  // «Авто» (R или кнопка на экране): конь игрока сам скачет за улаком, пока игрок не рулит сам
+  input.onAuto = () => {
+    input.auto = !input.auto;
+    document.getElementById('tb-auto').classList.toggle('on', input.auto);
+    if (match.state !== 'idle' && !demo) hud.showBanner(`<small>${t(input.auto ? 'autoOn' : 'autoOff')}</small>`, 1.4);
+  };
 
   document.getElementById('btn-pause').addEventListener('click', () => togglePause());
   document.getElementById('btn-help').addEventListener('click', () => {
@@ -1016,6 +1022,8 @@ function frame(now) {
     } else if (live && demo) match.update(dt);
     else if (live) {
       autoSwitch(dt);
+      // цель режима «Авто»: свободный улак или тот, кто его везёт; со своим улаком игрок рулит сам
+      input.autoTarget = ulak.holder === player ? null : ulak.holder ? ulak.holder.pos : ulak.pos;
       input.apply(player.controls, player, rig.screenRelative);
       match.update(dt);
       updateSound(dt);

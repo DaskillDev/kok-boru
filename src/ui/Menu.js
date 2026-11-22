@@ -69,7 +69,7 @@ const SETTINGS_TABS = {
   account: [{ type: 'account' }],
 };
 
-const HELP_KEYS = ['helpMove', 'helpSprint', 'helpAction', 'helpPass', 'helpFeint', 'helpSwitch', 'helpCam'];
+const HELP_KEYS = ['helpMove', 'helpSprint', 'helpAction', 'helpPass', 'helpFeint', 'helpSwitch', 'helpAuto', 'helpCam'];
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
