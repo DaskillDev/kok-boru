@@ -62,7 +62,7 @@ const SETTINGS_TABS = {
       type: 'seg',
       key: 'camera',
       label: 'camera',
-      options: [['chase', 'camChase'], ['tv', 'camTv'], ['top', 'camTop'], ['first', 'camFirst'], ['free', 'camFree']],
+      options: [['tv', 'camTv'], ['chase', 'camChase'], ['top', 'camTop'], ['first', 'camFirst'], ['free', 'camFree']],
     },
     { type: 'seg', key: 'names', label: 'names', options: [['all', 'namesAll'], ['humans', 'namesHumans'], ['none', 'namesNone']] },
   ],

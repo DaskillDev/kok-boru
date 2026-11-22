@@ -3,7 +3,7 @@
 const KEY = 'ulak-tartysh-settings-v1';
 
 const DEFAULTS = {
-  v: 4,
+  v: 5,
   lang: 'ru',
   nickname: '',
   // управление
@@ -19,7 +19,7 @@ const DEFAULTS = {
   vibration: true,
   // экран
   quality: 'auto', // auto | low | medium | high
-  camera: 'chase', // chase | tv | top | first
+  camera: 'tv', // tv (сбоку, как в футболе) | chase | top | first | free
   names: 'all', // all | humans | none
   // быстрый матч
   quick: {
@@ -73,6 +73,11 @@ function load() {
       raw.music = 0.6;
       raw.musicMatch = 0.25;
       raw.v = 4;
+    }
+    // v5: основной вид — сбоку, как в футболе (вернуть прежний: Настройки → Экран → Камера)
+    if (raw.v < 5) {
+      raw.camera = 'tv';
+      raw.v = 5;
     }
     return {
       ...DEFAULTS,

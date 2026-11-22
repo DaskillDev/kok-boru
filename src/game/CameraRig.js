@@ -3,7 +3,7 @@ import { FIELD } from '../config.js';
 
 // Камеры:
 //  chase — от третьего лица, за всадником;
-//  tv    — телевизионная, сбоку-сверху вдоль поля (как в футбольных симуляторах);
+//  tv    — вид сбоку вдоль поля, как в футбольных трансляциях;
 //  first — от первого лица, из глаз всадника.
 
 export const CAMERA_MODES = [
@@ -13,6 +13,9 @@ export const CAMERA_MODES = [
   { id: 'first', label: 'camFirst' },
   { id: 'free', label: 'camFree' },
 ];
+
+// Вид сбоку: высота камеры, отступ от игры к зрителю и угол обзора
+const TV = { height: 15, back: 31, fov: 34 };
 
 const _want = new THREE.Vector3();
 const _look = new THREE.Vector3();
@@ -110,7 +113,7 @@ export class CameraRig {
   }
 
   _fov(target) {
-    if (this.mode === 'tv') return 30;
+    if (this.mode === 'tv') return TV.fov;
     if (this.mode === 'top') return 38;
     if (this.mode === 'first') return 74 + (target.sprinting ? 6 : 0);
     return 60 + (target.sprinting ? 4 : 0);
@@ -121,9 +124,11 @@ export class CameraRig {
     const cz = Math.cos(this.yaw);
     if (this.mode === 'tv') {
       const f = this.focus;
-      const camX = THREE.MathUtils.clamp(f.x * 0.92, -FIELD.length / 2 + 12, FIELD.length / 2 - 12);
-      _want.set(camX, 27, FIELD.width / 2 + 34);
-      _look.set(f.x, 1, f.z * 0.55);
+      // вид сбоку, как в футбольных трансляциях: камера идёт вдоль боковой линии вслед за игрой,
+      // невысоко и довольно близко — всадников видно сбоку, а не точками сверху
+      const camX = THREE.MathUtils.clamp(f.x * 0.96, -FIELD.length / 2 + 8, FIELD.length / 2 - 8);
+      _want.set(camX, TV.height, f.z + TV.back);
+      _look.set(f.x, 1.2, f.z - 2);
     } else if (this.mode === 'free') {
       const f = this.free;
       const h = Math.cos(f.pitch) * f.dist;

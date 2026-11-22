@@ -254,7 +254,7 @@ export const EXTRA = {
     high: 'High',
     camera: 'Camera',
     camChase: 'Behind rider',
-    camTv: 'TV',
+    camTv: 'Side (football)',
     camTop: 'Top',
     camFirst: 'First person',
     names: 'Names above riders',
