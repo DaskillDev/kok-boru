@@ -1,6 +1,6 @@
 import { USING_CDN } from './assetBase.js';
 import * as THREE from 'three';
-import { TEAMS, FIELD, KAZAN, ULAK, enemyKazanX, setTeamCountry } from './config.js';
+import { TEAMS, FIELD, KAZAN, ULAK, setTeamCountry } from './config.js';
 import { COUNTRIES, countryByCode, countryName, flagCanvas } from './data/countries.js';
 import { BREEDS, breedById, breedFactors, riderFactors } from './data/horses.js';
 import { MathDuel } from './game/MathDuel.js';
@@ -34,7 +34,6 @@ import { Match } from './game/Match.js';
 import { Minimap } from './game/Minimap.js';
 import { TouchControls } from './game/TouchControls.js';
 import { GameAudio } from './game/Audio.js';
-import { Commentator } from './game/Commentator.js';
 import { BotBrain } from './ai/BotBrain.js';
 import { Menu } from './ui/Menu.js';
 import { settings, setSetting, onSettings, isTouchDevice, levelOf } from './ui/settings.js';
@@ -120,10 +119,6 @@ applyI18n();
 
 const hud = new Hud();
 const audio = new GameAudio();
-// комментатор матча: реплики на события (строка на экране + голос браузера)
-const commentator = new Commentator();
-const cWho = Commentator.who;
-const cScore = () => ({ a: match.score[0], b: match.score[1] });
 let releaseAudio = () => {};
 audio.holdUntil = new Promise((r) => (releaseAudio = r));
 const container = document.getElementById('app');
@@ -398,7 +393,6 @@ function showView3D(view) {
 onSettings((key) => {
   if (key === 'quality') applyQuality();
   if (key === 'names') applyNames();
-  if (key === 'commentator' && !settings.commentator) commentator.stop();
   if (key === 'camera') {
     rig.setMode(settings.camera, inMatch() ? player : null);
     applyNames();
@@ -497,7 +491,6 @@ async function init() {
         for (const r of match.riders) if (Math.random() < 0.5) setTimeout(() => audio.shout(r.pos.x, r.pos.z, 0.9), Math.random() * 500);
         audio.neigh(player.pos.x, player.pos.z, true);
         setTimeout(() => tip('tipStart', 3), 1100);
-        commentator.say('start');
       },
       onSides: () => {
         field.setSides();
@@ -508,18 +501,15 @@ async function init() {
         hud.showBanner(`${t('periodEnd')} ${n}<small>${t('swapSides')}</small>`, 3.2);
         audio.whistle(true);
         setTimeout(() => audio.goal(true), 400);
-        commentator.say('period', cScore());
       },
       onWhistle: (reason) => {
         if (demo) return;
         hud.showBanner(`${t(reason === 'out' ? 'out' : 'loose')}<small>${t('duel')} — ${t('duelSub')}</small>`, 2.6);
         audio.whistle();
         lastThrow = null;
-        commentator.say(reason === 'out' ? 'out' : 'loose');
       },
       onFoul: (r, kind, dur) => {
         if (demo) return;
-        commentator.say('foul', { n: cWho(r) });
         const who = r === player ? t('youPenalty') : r.name;
         hud.showBanner(`<small>${t('foul')}: ${t('foulRam')} · ${who} · ${t('penaltyOf')} ${Math.round(dur)} с</small>`, 2.4, '#ffb04a');
         audio.foul(r.teamId === player.teamId);
@@ -531,7 +521,6 @@ async function init() {
         if (demo) return;
         hud.showBanner(`${t('overtime')}<small>${t('overtimeSub')}</small>`, 2.2, '#ffd34a');
         audio.whistle(true);
-        commentator.say('overtime');
       },
       onGoal: (team, scorer) => {
         arena.cheer();
@@ -544,26 +533,22 @@ async function init() {
         hud.showBanner(`${t('goal')}<small>${team.name} · ${who}</small>`, 3, team.css);
         audio.goal(team.id === player.teamId);
         if (scorer) audio.shout(scorer.pos.x, scorer.pos.z, 1.3);
-        commentator.say(scorer ? 'goal' : 'goalTeam', { n: cWho(scorer), t: team.name, ...cScore() });
         lastThrow = null;
         if (team.id === 0) matchGoals++;
       },
       onPickup: (r) => {
         if (!demo) audio.pickup(r.pos.x, r.pos.z);
         if (!demo && r === player) tip('tipCarry', 3.2);
-        if (!demo) commentator.say('pickup', { n: cWho(r), t: r.team.name });
       },
       onThrow: (r) => {
         if (demo) return;
         const power = THREE.MathUtils.clamp((ulak.vel.length() - 6) / 18, 0, 1);
         audio.throwSound(r.pos.x, r.pos.z, power);
         lastThrow = { t: 0, team: r.teamId };
-        commentator.say('throw', { n: cWho(r) });
       },
-      onPass: (r, mate) => {
+      onPass: (r) => {
         if (demo) return;
         audio.throwSound(r.pos.x, r.pos.z, 0.3);
-        commentator.say('pass', { n: cWho(r), m: cWho(mate) });
         if (r === player) matchStats.passes++;
       },
       onSteal: (thief, victim) => {
@@ -571,7 +556,6 @@ async function init() {
         audio.shout(thief.pos.x, thief.pos.z, 1.1);
         if (thief === player) matchStats.steals++;
         audio.steal(thief.teamId === player.teamId);
-        commentator.say('steal', { n: cWho(thief), m: cWho(victim) });
         if (thief === player) hud.showBanner(`<small>${t('stolen')}</small>`, 1);
         else if (victim === player) hud.showBanner(`<small>${t('lostUlak')}</small>`, 1.2);
       },
@@ -587,7 +571,6 @@ async function init() {
         audio.shout(rival.pos.x, rival.pos.z, 1);
         setTimeout(() => audio.shout(holder.pos.x, holder.pos.z, 0.9), 250);
         if (Math.random() < 0.5) audio.neigh(holder.pos.x, holder.pos.z);
-        commentator.say('tug', { n: cWho(holder), m: cWho(rival) });
         if (rival === player) hud.showBanner(`<small>${t('tugRival')}</small>`, 1.2);
         else if (holder === player) hud.showBanner(`<small>${t('tugHolder')}</small>`, 1.2);
       },
@@ -602,7 +585,6 @@ async function init() {
         dust.burst((holder.pos.x + rival.pos.x) / 2, (holder.pos.z + rival.pos.z) / 2, 12);
         if (demo) return;
         if (holder === player || rival === player) rig.shake(0.3);
-        if (!stolen) commentator.say('held', { n: cWho(holder) });
         if (!stolen && holder === player) hud.showBanner(`<small>${t('held')}</small>`, 0.9);
         else if (!stolen && rival === player) hud.showBanner(`<small>${t('notStolen')}</small>`, 0.9);
       },
@@ -611,7 +593,6 @@ async function init() {
         dust.burst(h.pos.x, h.pos.z, 14);
         if (demo) return;
         audio.neigh(h.pos.x, h.pos.z);
-        commentator.say('fumble', { n: cWho(h) });
         if (h === player) hud.showBanner(`<small>${t('fumbleLost')}</small>`, 1.2);
         else if (by === player) hud.showBanner(`<small>${t('fumbleWon')}</small>`, 1.2);
       },
@@ -958,7 +939,6 @@ function togglePause() {
   if (paused) resume();
   else {
     paused = true;
-    commentator.stop();
     menu.inMatch = true;
     menu.show('pause');
     touchControls.release();
@@ -972,7 +952,6 @@ function resume() {
 }
 
 function exitToMenu() {
-  commentator.stop();
   menu.inMatch = false;
   hud.show(false);
   hud.showBanner('');
@@ -983,7 +962,6 @@ function exitToMenu() {
 
 function finishMatch(score) {
   const [a, b] = score;
-  commentator.say(a === b ? 'draw' : 'win', { t: TEAMS[a > b ? 0 : 1].name, a, b });
   const st = settings.stats;
   setSetting('stats', {
     matches: st.matches + 1,
@@ -1102,11 +1080,6 @@ function frame(now) {
       tracks.update(dt);
       ulak.render(dt, time);
       dust.update(dt);
-    }
-    commentator.update();
-    if (!demo && !paused && match.state === 'playing' && ulak.holder && !match.tug) {
-      const h = ulak.holder;
-      if (Math.hypot(enemyKazanX(h.teamId) - h.pos.x, h.pos.z) < 26) commentator.say('near', { n: cWho(h), t: h.team.name });
     }
     aim.update(player);
     updateUlakArrow();

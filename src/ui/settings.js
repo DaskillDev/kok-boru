@@ -17,7 +17,6 @@ const DEFAULTS = {
   musicMatch: 0.25, // музыка во время матча
   sfx: 1,
   vibration: true,
-  commentator: true, // комментатор матча: реплики голосом и строкой на экране
   // экран
   quality: 'auto', // auto | low | medium | high
   camera: 'tv', // tv (сбоку, как в футболе) | chase | top | first | free
