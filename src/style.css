@@ -108,6 +108,7 @@ button:disabled { cursor: default; opacity: .55; }
 #tb-sprint { right: calc(108px * var(--btn-scale)); bottom: calc(4px * var(--btn-scale)); width: calc(72px * var(--btn-scale)); height: calc(72px * var(--btn-scale)); }
 #tb-feint { right: calc(92px * var(--btn-scale)); bottom: calc(84px * var(--btn-scale)); width: calc(62px * var(--btn-scale)); height: calc(62px * var(--btn-scale)); }
 #tb-pass { right: calc(18px * var(--btn-scale)); bottom: calc(118px * var(--btn-scale)); width: calc(62px * var(--btn-scale)); height: calc(62px * var(--btn-scale)); }
+#tb-switch { right: calc(86px * var(--btn-scale)); bottom: calc(152px * var(--btn-scale)); width: calc(56px * var(--btn-scale)); height: calc(56px * var(--btn-scale)); font-size: calc(11px * var(--btn-scale)) !important; }
 body.left-handed #stick { left: auto; right: calc(34px + var(--safe-r)); }
 body.left-handed #stick-zone { left: auto; right: 0; }
 body.left-handed #touch-buttons { right: auto; left: calc(18px + var(--safe-l)); transform: scaleX(-1); }

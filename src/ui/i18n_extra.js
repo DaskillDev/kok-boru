@@ -309,6 +309,7 @@ export const EXTRA = {
     btnGrab: 'Grab',
     btnPass: 'Pass',
     btnFeint: 'Feint',
+    btnSwitch: 'Switch',
     rotate: 'Turn your phone sideways to see the whole field',
     you: 'You',
     yourTeam: 'Your team',

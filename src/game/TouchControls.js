@@ -3,7 +3,7 @@ import { t } from '../ui/i18n.js';
 import { toStage, stageRect } from '../ui/viewport.js';
 
 // Сенсорное управление: джойстик (плавающий или фиксированный) либо езда к точке касания,
-// плюс кнопки «Рывок», «Отбор/Бросок», «Пас», «Финт». Пишет в input.virtual.
+// плюс кнопки «Рывок», «Отбор/Бросок», «Пас», «Финт», «Смена». Пишет в input.virtual.
 
 export class TouchControls {
   // toWorld(clientX, clientY) → { x, z } на плоскости поля или null
@@ -21,7 +21,7 @@ export class TouchControls {
     this._label = '';
 
     // кнопки действий: какой палец какую кнопку держит
-    this.buttons = [['tb-sprint', 'sprint'], ['tb-action', 'action'], ['tb-pass', 'pass'], ['tb-feint', 'feint']].map(
+    this.buttons = [['tb-sprint', 'sprint'], ['tb-action', 'action'], ['tb-pass', 'pass'], ['tb-feint', 'feint'], ['tb-switch', 'switch']].map(
       ([id, key]) => ({ el: document.getElementById(id), key }),
     );
     this.held = new Map(); // pointerId → кнопка
@@ -158,6 +158,8 @@ export class TouchControls {
     if (btn) {
       this.held.set(e.pointerId, btn);
       this._setButton(btn);
+      // «Смена» срабатывает один раз по нажатию: управление переходит к товарищу, который ближе к улаку
+      if (btn.key === 'switch') this.input.onSwitch?.();
       return;
     }
     const p = toStage(e.clientX, e.clientY);
