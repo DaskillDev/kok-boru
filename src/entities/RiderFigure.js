@@ -1,16 +1,20 @@
 import { ASSET_BASE } from '../assetBase.js';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
-import { ornamentStripTexture } from '../scene/textures.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
-// Всадник: скелетная модель человека (скан «Typing-japanese-man», CC-BY 4.0 — см. CREDITS.md)
-// со скелетом Mixamo. Сидячая поза берётся из клипа модели и доводится до посадки верхом
-// поворотами костей; рубашка перекрашивается в цвет команды; на голову надевается калпак.
-// Начало координат группы — точка посадки (седло), +Z — вперёд, +Y — вверх.
+// Всадник: модель «rider-kok-boru» — фигура в посадке верхом, собранная из жёстких частей
+// (корпус, голова, плечи, предплечья, бёдра, голени), соединённых в суставах. Скелета и анимаций в файле нет:
+// движения делаются поворотами частей в суставах. Форма красится кодом в цвета команды.
+// Начало координат группы — точка посадки (седло), +Z — вперёд, +Y — вверх, +X — влево от всадника.
 
-const RIDER_HEIGHT = 1.74; // рост в метрах
-const POSE_TIME = 1.0; // момент клипа, из которого берётся базовая сидячая поза
+const RIDER_SCALE = 1; // модель сделана в метрах под нашего коня
+// Материалы модели, которые красятся в цвета команды (остальные остаются как в файле)
+const TEAM_PAINT = { 'Madder red jersey': 'color', 'Midnight blue': 'dark', 'Ochre piping': 'trim' };
+// Части штатной шапки модели (стёганый шлем) — прячутся под калпаком и тебетеем
+const CAP_PARTS = new Set(['Padded riding cap', 'Cap binding', 'Short visor', 'Crown button']);
+// Суставы модели
+const JOINTS = ['Spine', 'Head', 'Shoulder.R', 'Elbow.R', 'Shoulder.L', 'Elbow.L', 'Hip.R', 'Knee.R', 'Hip.L', 'Knee.L'];
 
 let proto = null;
 
@@ -20,99 +24,89 @@ const Z = new THREE.Vector3(0, 0, 1);
 const _q = new THREE.Quaternion();
 const _pq = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
-const _v = new THREE.Vector3();
+const _c = new THREE.Color();
 
-function bone(root, name) {
-  let hit = null;
-  root.traverse((o) => {
-    if (!hit && o.isBone && o.name.replace(":", "").startsWith(`mixamorig${name}_`)) hit = o;
-  });
-  if (!hit) throw new Error(`Rider bone not found: ${name}`);
-  return hit;
-}
+// three.js при загрузке заменяет в именах точки и пробелы — сравниваем имена без них
+const norm = (n) => String(n || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
 
 export async function loadRiderAsset(onProgress) {
-  const gltf = await new GLTFLoader().loadAsync(`${ASSET_BASE}models/typing-japanese-man.glb`, onProgress);
-  let mesh = null;
-  gltf.scene.traverse((o) => {
-    if (o.isSkinnedMesh) mesh = o;
+  const gltf = await new GLTFLoader().loadAsync(`${ASSET_BASE}models/rider-kok-boru.glb`, onProgress);
+  const scene = gltf.scene;
+  scene.updateMatrixWorld(true);
+  const joints = new Map(); // нормализованное имя → узел модели
+  scene.traverse((o) => {
+    const j = JOINTS.find((n) => norm(n) === norm(o.name));
+    if (j && !o.isMesh) joints.set(j, o);
   });
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  mesh.frustumCulled = false;
-  mesh.material.roughness = 0.85;
-  mesh.material.metalness = 0;
-  mesh.material.envMapIntensity = 0.7;
+  for (const j of JOINTS) if (!joints.has(j)) throw new Error(`Rider joint not found: ${j}`);
 
-  // рост в исходных единицах — по Т-позе
-  gltf.scene.updateMatrixWorld(true);
-  const top = bone(gltf.scene, 'HeadTop_End').getWorldPosition(new THREE.Vector3());
-  const toe = bone(gltf.scene, 'LeftToeBase').getWorldPosition(new THREE.Vector3());
-  const scale = RIDER_HEIGHT / (top.y - toe.y + 0.02);
+  // Каждая часть тела — десятки мелких деталей. Склеиваем детали одного сустава в одну геометрию,
+  // цвет материала записываем в вершины: всадник рисуется за 11 вызовов вместо 38.
+  // parts: [{ joint, cap, pieces: [{ geo (в координатах сустава), paint (ключ цвета команды или null), color }] }]
+  const parts = [];
+  const inv = new THREE.Matrix4();
+  for (const [name, node] of joints) {
+    const groups = { body: [], cap: [] };
+    inv.copy(node.matrixWorld).invert();
+    for (const child of node.children) {
+      if (!child.isMesh) continue;
+      const geo = child.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, child.matrixWorld));
+      for (const k of Object.keys(geo.attributes)) if (k !== 'position' && k !== 'normal') geo.deleteAttribute(k);
+      const m = child.material;
+      const isCap = [...CAP_PARTS].some((n) => norm(n) === norm(child.name));
+      groups[isCap ? 'cap' : 'body'].push({ geo, paint: TEAM_PAINT[m.name] || null, color: m.color.clone() });
+    }
+    for (const kind of ['body', 'cap']) if (groups[kind].length) parts.push({ joint: name, cap: kind === 'cap', pieces: groups[kind] });
+  }
 
-  proto = { scene: gltf.scene, clip: gltf.animations[0], scale, image: mesh.material.map.image, teamMaps: new Map() };
+  // центр кисти в координатах локтя — туда крепятся повод и улак
+  const hands = {};
+  for (const side of ['R', 'L']) {
+    const elbow = joints.get(`Elbow.${side}`);
+    const hand = elbow.children.find((c) => c.isMesh && norm(c.name).startsWith('reinhand') /* одинаковые имена загрузчик нумерует */);
+    const box = new THREE.Box3().setFromBufferAttribute(hand.geometry.attributes.position);
+    hands[side] = box.getCenter(new THREE.Vector3()).applyMatrix4(hand.matrix);
+  }
+
+  // пустой каркас из суставов — его копирует каждый всадник
+  const rig = new THREE.Group();
+  const made = new Map();
+  for (const [name, node] of joints) {
+    const o = new THREE.Object3D();
+    o.name = name;
+    o.position.copy(node.position);
+    o.quaternion.copy(node.quaternion);
+    made.set(node, o);
+  }
+  for (const [, node] of joints) (made.get(node.parent) || rig).add(made.get(node));
+
+  proto = { rig, parts, hands, geos: new Map() };
   return proto;
 }
 
-// Перекрашивает белую рубашку на текстуре в цвет команды, сохраняя складки и тени
-function jerseyTexture(team) {
-  const key = `${team.color}:${team.dark}`;
-  if (proto.teamMaps.has(key)) return proto.teamMaps.get(key);
-  const img = proto.image;
-  const c = document.createElement('canvas');
-  c.width = img.width;
-  c.height = img.height;
-  const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(img, 0, 0);
-  const d = ctx.getImageData(0, 0, c.width, c.height);
-  const p = d.data;
-  const col = new THREE.Color(team.color).convertLinearToSRGB();
-  const dark = new THREE.Color(team.dark).convertLinearToSRGB();
-  const sm = (a, b, x) => {
-    const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-    return t * t * (3 - 2 * t);
-  };
-  // Области текстуры (в долях её размера): где лежат брюки, а где лицо — его не трогаем
-  const W = c.width;
-  const H = c.height;
-  const inPants = (x, y) => (y < 0.39 && x < 0.7) || (x > 0.22 && x < 0.435 && y >= 0.17 && y < 0.705);
-  const inFace = (x, y) => x > 0.19 && x < 0.34 && y > 0.775 && y < 0.93;
-  for (let i = 0; i < p.length; i += 4) {
-    const px = ((i / 4) % W) / W;
-    const py = Math.floor(i / 4 / W) / H;
-    if (inFace(px, py)) continue;
-    const r = p[i];
-    const g = p[i + 1];
-    const b = p[i + 2];
-    const mx = Math.max(r, g, b);
-    const mn = Math.min(r, g, b);
-    const lum = r * 0.3 + g * 0.59 + b * 0.11;
-    const sat = mx === 0 ? 0 : (mx - mn) / mx;
-    // рубашка: светлая и почти бесцветная
-    const shirt = (1 - sm(0.07, 0.17, sat)) * sm(125, 175, lum);
-    if (shirt > 0.01) {
-      const shade = Math.pow(lum / 245, 1.6);
-      p[i] = r + (col.r * 255 * shade - r) * shirt;
-      p[i + 1] = g + (col.g * 255 * shade - g) * shirt;
-      p[i + 2] = b + (col.b * 255 * shade - b) * shirt;
-      continue;
-    }
-    // брюки: бежевые → тёмные в тон команды
-    // всё в области брюк, кроме рыжего ремня
-    if (inPants(px, py) && !(sat > 0.42 && r > 120)) {
-      const k = lum / 190;
-      p[i] = dark.r * 255 * k * 0.9 + 12;
-      p[i + 1] = dark.g * 255 * k * 0.9 + 12;
-      p[i + 2] = dark.b * 255 * k * 0.9 + 14;
-    }
-  }
-  ctx.putImageData(d, 0, 0);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.flipY = false; // как у текстур glTF
-  t.anisotropy = 8;
-  proto.teamMaps.set(key, t);
-  return t;
+const riderMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0, envMapIntensity: 0.7 });
+
+// Геометрии частей тела в цветах команды (общие для всех всадников команды)
+function teamGeometries(team) {
+  const key = `${team.color}:${team.dark}:${team.trim}`;
+  if (proto.geos.has(key)) return proto.geos.get(key);
+  const list = proto.parts.map((part) => {
+    const colored = part.pieces.map((pc) => {
+      const g = pc.geo.clone();
+      if (pc.paint) _c.set(team[pc.paint]);
+      else _c.copy(pc.color);
+      // брюки и шапка — тёмный цвет команды, но не в черноту
+      if (pc.paint === 'dark') _c.multiplyScalar(0.8);
+      const n = g.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.set([_c.r, _c.g, _c.b], i * 3);
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      return g;
+    });
+    return mergeGeometries(colored, false);
+  });
+  proto.geos.set(key, list);
+  return list;
 }
 
 const mats = {
@@ -175,28 +169,6 @@ function createTebetey() {
   const crown = new THREE.Mesh(new THREE.LatheGeometry(crownPts, 24), top);
   crown.scale.set(1, 1, 1.12);
   g.add(crown);
-  g.traverse((o) => {
-    if (o.isMesh) o.castShadow = true;
-  });
-  return g;
-}
-
-// Защитный шлем
-function createHelmet() {
-  const g = new THREE.Group();
-  const shell = new THREE.Mesh(
-    new THREE.SphereGeometry(0.135, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.55),
-    new THREE.MeshStandardMaterial({ color: 0x23262d, roughness: 0.35, metalness: 0.2 }),
-  );
-  shell.scale.set(1, 1, 1.15);
-  shell.position.y = 0.03;
-  g.add(shell);
-  const visor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.1, 0.11, 0.015, 20, 1, false, -Math.PI / 2, Math.PI),
-    new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.5 }),
-  );
-  visor.position.set(0, 0.04, 0.09);
-  g.add(visor);
   g.traverse((o) => {
     if (o.isMesh) o.castShadow = true;
   });
@@ -283,108 +255,76 @@ export class RiderFigure {
   constructor(team, number = 0) {
     if (!proto) throw new Error('Rider asset is not loaded');
     const g = (this.group = new THREE.Group());
-    const model = (this.model = cloneSkinned(proto.scene));
-    const rig = (this.rig = new THREE.Group());
-    rig.scale.setScalar(proto.scale);
-    rig.add(model);
+    const rig = (this.rig = proto.rig.clone(true));
+    rig.scale.setScalar(RIDER_SCALE);
     g.add(rig);
 
-    model.traverse((o) => {
-      if (o.isSkinnedMesh) {
-        o.material = o.material.clone();
-        o.material.map = jerseyTexture(team);
-        this.mesh = o;
-      }
+    const J = {};
+    rig.traverse((o) => {
+      if (JOINTS.includes(o.name)) J[o.name] = o;
     });
 
-    const b = (n) => bone(model, n);
+    // части тела
+    this.meshes = [];
+    this.capMeshes = [];
+    const geos = teamGeometries(team);
+    proto.parts.forEach((part, i) => {
+      const m = new THREE.Mesh(geos[i], riderMat);
+      m.castShadow = true;
+      m.receiveShadow = true;
+      J[part.joint].add(m);
+      this.meshes.push(m);
+      if (part.cap) this.capMeshes.push(m);
+    });
+
+    // кисти: точки, к которым тянутся повод и улак
+    const hand = (side) => {
+      const o = new THREE.Object3D();
+      o.position.copy(proto.hands[side]);
+      J[`Elbow.${side}`].add(o);
+      return o;
+    };
+    // имена — как у прежней скелетной модели, чтобы остальной код не менялся
     this.bones = {
-      hips: b('Hips'),
-      spine: b('Spine'),
-      spine2: b('Spine2'),
-      neck: b('Neck'),
-      head: b('Head'),
-      headTop: b('HeadTop_End'),
-      lArm: b('LeftArm'),
-      lFore: b('LeftForeArm'),
-      rArm: b('RightArm'),
-      rFore: b('RightForeArm'),
-      rHand: b('RightHand'),
-      lHand: b('LeftHand'),
-      lUpLeg: b('LeftUpLeg'),
-      lLeg: b('LeftLeg'),
-      lFoot: b('LeftFoot'),
-      rUpLeg: b('RightUpLeg'),
-      rLeg: b('RightLeg'),
-      rFoot: b('RightFoot'),
+      spine: J.Spine,
+      head: J.Head,
+      rArm: J['Shoulder.R'],
+      rFore: J['Elbow.R'],
+      lArm: J['Shoulder.L'],
+      lFore: J['Elbow.L'],
+      rHand: hand('R'),
+      lHand: hand('L'),
     };
 
-    // --- калпак: крепится к кости головы, ориентация — по Т-позе ---
-    g.updateMatrixWorld(true);
-    const headBone = this.bones.head;
+    // --- голова: группа в макушке; вид «от первого лица» прячет её целиком ---
     const holder = (this.head = new THREE.Group());
-    const ws = headBone.getWorldScale(new THREE.Vector3());
-    holder.scale.set(1 / ws.x, 1 / ws.y, 1 / ws.z);
-    holder.quaternion.copy(headBone.getWorldQuaternion(new THREE.Quaternion()).invert());
-    // макушка в локальных координатах кости головы
-    const topLocal = headBone.worldToLocal(this.bones.headTop.getWorldPosition(new THREE.Vector3()));
-    holder.position.copy(topLocal);
-    headBone.add(holder);
-    this.hats = { kalpak: createKalpak(), tebetey: createTebetey(), helmet: createHelmet() };
-    const kalpak = this.hats.kalpak;
-    this.hats.tebetey.visible = this.hats.helmet.visible = false;
-    for (const k of ['tebetey', 'helmet']) {
-      this.hats[k].position.set(0, -0.115, 0.012);
-      this.hats[k].scale.setScalar(1.07);
-      holder.add(this.hats[k]);
+    holder.position.set(0, 0.19, 0);
+    for (const c of [...J.Head.children]) {
+      c.position.y -= 0.19;
+      holder.add(c);
     }
-    kalpak.position.set(0, -0.115, 0.012);
-    kalpak.scale.setScalar(1.07);
-    kalpak.rotation.x = -0.1;
-    holder.add(kalpak);
+    J.Head.add(holder);
+    // головные уборы: шлем — штатная шапка модели, калпак и тебетей надеваются вместо неё
+    this.hats = { kalpak: createKalpak(), tebetey: createTebetey() };
+    for (const h of Object.values(this.hats)) {
+      h.position.set(0, -0.085, -0.005);
+      h.scale.setScalar(1.08);
+      holder.add(h);
+    }
+    this.hats.kalpak.rotation.x = -0.08;
+    this.setHat('kalpak');
 
-    // --- номер на спине: табличка на кости груди ---
+    // --- номер на спине ---
     if (number) {
-      const chest = this.bones.spine2;
-      const nh = new THREE.Group();
-      const cs = chest.getWorldScale(new THREE.Vector3());
-      nh.scale.set(1 / cs.x, 1 / cs.y, 1 / cs.z);
-      nh.quaternion.copy(chest.getWorldQuaternion(new THREE.Quaternion()).invert());
-      chest.add(nh);
       const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.2, 0.2), numberMaterial(number));
-      plate.position.set(0, 0.07, -0.118);
+      plate.position.set(0, 0.36, -0.135);
       plate.rotation.y = Math.PI; // лицом назад
-      plate.rotation.x = 0.1;
-      nh.add(plate);
+      plate.rotation.x = 0.06;
+      J.Spine.add(plate);
     }
-
-    // --- базовая сидячая поза из клипа ---
-    this._applyClipPose(POSE_TIME);
-
-    // посадка верхом: бёдра разведены и опущены, голени вниз, руки к поводу
-    this._w(this.bones.lUpLeg, Y, 0.42);
-    this._w(this.bones.rUpLeg, Y, -0.42);
-    this._w(this.bones.lUpLeg, X, 0.5);
-    this._w(this.bones.rUpLeg, X, 0.5);
-    this._w(this.bones.lLeg, X, -0.35);
-    this._w(this.bones.rLeg, X, -0.35);
-    this._w(this.bones.lLeg, Z, -0.2);
-    this._w(this.bones.rLeg, Z, 0.2);
-    this._w(this.bones.lFoot, X, -0.25);
-    this._w(this.bones.rFoot, X, -0.25);
-
-    // кисти сжаты в кулак: для каждого пальца подбираем ось сгиба по скелету
-    this._curlFingers('Left', 1.15);
-    this._curlFingers('Right', 0.95);
 
     this.base = new Map();
-    for (const bn of Object.values(this.bones)) this.base.set(bn, bn.quaternion.clone());
-
-    // таз — в точку посадки
-    g.updateMatrixWorld(true);
-    this.bones.hips.getWorldPosition(_v);
-    g.worldToLocal(_v);
-    rig.position.set(-_v.x, -_v.y + 0.06, -_v.z + 0.06);
+    for (const bn of [J.Spine, J.Head, J['Shoulder.R'], J['Elbow.R'], J['Shoulder.L'], J['Elbow.L']]) this.base.set(bn, bn.quaternion.clone());
 
     this._armX = 0;
     this._armZ = 0;
@@ -394,58 +334,7 @@ export class RiderFigure {
     this.swing = 0; // таймер анимации броска
   }
 
-  // Сгибает пальцы: пробуем повороты вокруг локальных осей и берём тот,
-  // который ближе всего подводит кончик пальца к запястью
-  _curlFingers(side, angle) {
-    const hand = bone(this.model, `${side}Hand`);
-    const origin = new THREE.Vector3();
-    const tipPos = new THREE.Vector3();
-    const axes = [X, Y, Z];
-    const q = new THREE.Quaternion();
-    for (const finger of ['Index', 'Middle', 'Ring', 'Pinky']) {
-      let chain;
-      let tip;
-      try {
-        chain = [1, 2, 3].map((i) => bone(this.model, `${side}Hand${finger}${i}`));
-        tip = bone(this.model, `${side}Hand${finger}4`);
-      } catch {
-        continue;
-      }
-      const rest = chain.map((b) => b.quaternion.clone());
-      let best = null;
-      let bestD = Infinity;
-      for (const ax of axes) {
-        for (const sgn of [1, -1]) {
-          chain.forEach((b, i) => b.quaternion.copy(rest[i]).multiply(q.setFromAxisAngle(ax, sgn * angle)));
-          hand.updateWorldMatrix(true, true);
-          const d = tip.getWorldPosition(tipPos).distanceTo(hand.getWorldPosition(origin));
-          if (d < bestD) {
-            bestD = d;
-            best = [ax, sgn];
-          }
-        }
-      }
-      chain.forEach((b, i) => b.quaternion.copy(rest[i]).multiply(q.setFromAxisAngle(best[0], best[1] * angle)));
-    }
-  }
-
-  // Выставляет кости в позу клипа в момент t (без микшера)
-  _applyClipPose(t) {
-    const byName = new Map();
-    this.model.traverse((o) => byName.set(o.name, o));
-    for (const track of proto.clip.tracks) {
-      const dot = track.name.lastIndexOf('.');
-      const node = byName.get(track.name.slice(0, dot));
-      const prop = track.name.slice(dot + 1);
-      if (!node || (prop !== 'quaternion' && prop !== 'position')) continue;
-      const interp = track.createInterpolant();
-      const v = interp.evaluate(t);
-      if (prop === 'quaternion') node.quaternion.fromArray(v);
-      else node.position.fromArray(v);
-    }
-  }
-
-  // Поворот кости вокруг оси, заданной в системе координат всадника (X — влево, Y — вверх, Z — вперёд)
+  // Поворот части вокруг оси, заданной в системе координат всадника (X — влево, Y — вверх, Z — вперёд)
   _w(bn, axis, angle) {
     if (!angle) return;
     this.group.getWorldQuaternion(_q);
@@ -521,28 +410,31 @@ export class RiderFigure {
     // сброс к базовой позе и наложение поворотов
     for (const [bn, q] of this.base) bn.quaternion.copy(q);
     const B = this.bones;
-    this._w(B.spine, X, this._lean * 0.6);
-    this._w(B.spine2, X, this._lean * 0.4);
+    this._w(B.spine, X, this._lean);
     this._w(B.spine, Z, this._roll + this._tugRoll + Math.sin(this._t * 17) * 0.2 * jolt);
+    // голова держит горизонт: не наклоняется вместе с корпусом
+    this._w(B.head, Z, -Math.sin(this._t * 17 + 0.8) * 0.15 * jolt);
+    this._w(B.head, X, -this._lean * 0.75);
     if (this._lArmZ > 0.01) {
       this._w(B.lArm, X, 0.25 * this._lArmZ);
       this._w(B.lArm, Z, this._lArmZ);
     }
-    this._w(B.neck, Z, -Math.sin(this._t * 17 + 0.8) * 0.15 * jolt);
-    this._w(B.neck, X, -this._lean * 0.75);
     this._w(B.rArm, X, this._armX);
     this._w(B.rArm, Z, -this._armZ);
     this._w(B.rFore, X, this._foreX);
   }
 
+  // kalpak | tebetey | helmet (шлем — штатная стёганая шапка модели)
   setHat(type) {
-    for (const [k, h] of Object.entries(this.hats)) h.visible = k === (this.hats[type] ? type : 'kalpak');
+    const t = this.hats[type] ? type : type === 'helmet' ? 'helmet' : 'kalpak';
+    for (const [k, h] of Object.entries(this.hats)) h.visible = k === t;
+    for (const m of this.capMeshes) m.visible = t === 'helmet';
   }
 
   // Перекраска формы под команду (после выбора стран)
   setTeam(team) {
-    this.mesh.material.map = jerseyTexture(team);
-    this.mesh.material.needsUpdate = true;
+    const geos = teamGeometries(team);
+    this.meshes.forEach((m, i) => (m.geometry = geos[i]));
   }
 
   playThrow() {

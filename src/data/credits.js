@@ -8,12 +8,7 @@ export const GAME_YEAR = 2026;
 export const CREDITS = {
   models: [
     ['Horse', 'Henry S (@henry_7)', 'CC BY 4.0', 'https://sketchfab.com/3d-models/horse-a6f860e43e364619bccb174a1ac7d0c9'],
-    [
-      'Typing-japanese-man',
-      'ddd (@endonoriko)',
-      'CC BY 4.0',
-      'https://sketchfab.com/3d-models/typing-japanese-man-35578261554f48b9aab0888f7a28802e',
-    ],
+    ['Rider (rider-kok-boru)', 'Dastan Erkinbekov', '', ''],
   ],
   music: [
     [
